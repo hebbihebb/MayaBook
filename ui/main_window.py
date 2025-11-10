@@ -1,6 +1,13 @@
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
+import threading
+from core.tts_maya1 import list_voices, synthesize_preview
 from core.epub_extract import extract_text
+
+try:
+    import simpleaudio as sa
+except ImportError:
+    sa = None
 
 class MainWindow(tk.Tk):
     def __init__(self):
@@ -68,9 +75,41 @@ class MainWindow(tk.Tk):
         self.gap_size = tk.IntVar(value=200)
         ttk.Scale(settings_frame, from_=0, to=1000, orient=tk.HORIZONTAL, variable=self.gap_size, length=200).grid(row=5, column=1, padx=5, pady=5, sticky="w")
 
+        # Frame for preview
+        preview_frame = ttk.LabelFrame(self, text="Preview")
+        preview_frame.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
+
+        # Voice dropdown
+        ttk.Label(preview_frame, text="Voice:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.voice = tk.StringVar()
+        self.voice_dropdown = ttk.Combobox(preview_frame, textvariable=self.voice, width=47)
+        self.voice_dropdown.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        self.voice_dropdown['values'] = list_voices()
+        if self.voice_dropdown['values']:
+            self.voice.set(self.voice_dropdown['values'][0])
+
+        # Rate slider
+        ttk.Label(preview_frame, text="Rate (WPM):").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.rate_wpm = tk.IntVar(value=180)
+        ttk.Scale(preview_frame, from_=120, to=220, orient=tk.HORIZONTAL, variable=self.rate_wpm, length=200).grid(row=1, column=1, padx=5, pady=5, sticky="w")
+
+        # Synthesize button
+        self.synthesize_button = ttk.Button(preview_frame, text="Synthesize Preview", command=self._synthesize_preview)
+        self.synthesize_button.grid(row=2, column=0, padx=5, pady=5)
+        self.synthesize_button['state'] = tk.DISABLED
+
+        # Status label
+        self.preview_status = tk.StringVar()
+        ttk.Label(preview_frame, textvariable=self.preview_status).grid(row=2, column=1, padx=5, pady=5, sticky="w")
+
+        # Play button
+        self.play_button = ttk.Button(preview_frame, text="Play", command=self._play_preview)
+        self.play_button.grid(row=2, column=2, padx=5, pady=5)
+        self.play_button['state'] = tk.DISABLED
+
         # Frame for actions
         actions_frame = ttk.Frame(self)
-        actions_frame.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
+        actions_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
 
         # Buttons
         ttk.Button(actions_frame, text="Extract EPUB", command=self._extract_epub).pack(side=tk.LEFT, padx=5)
@@ -78,7 +117,7 @@ class MainWindow(tk.Tk):
         ttk.Button(actions_frame, text="Start Generation", command=self._start_generation).pack(side=tk.LEFT, padx=5)
         ttk.Button(actions_frame, text="Open Output Folder", command=self._open_output_folder).pack(side=tk.LEFT, padx=5)
 
-        # Frame for EPUB text preview
+        # Frame for EPUB text preview (kept from origin/main)
         preview_frame = ttk.LabelFrame(self, text="EPUB Text Preview")
         preview_frame.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
         self.grid_rowconfigure(3, weight=1)
@@ -94,10 +133,17 @@ class MainWindow(tk.Tk):
         self.progress = ttk.Progressbar(self, orient=tk.HORIZONTAL, length=100, mode='determinate')
         self.progress.grid(row=4, column=0, padx=10, pady=10, sticky="ew")
 
+        # Preview text (kept from HEAD for direct TTS preview input)
+        preview_text_frame = ttk.LabelFrame(self, text="Preview Text")
+        preview_text_frame.grid(row=5, column=0, padx=10, pady=10, sticky="nsew")
+        self.preview_text = tk.Text(preview_text_frame, height=5)
+        self.preview_text.pack(fill="both", expand=True)
+        self.preview_text.bind("<KeyRelease>", self._on_text_change)
+
         # Status log
         self.log = tk.Text(self, height=10)
-        self.log.grid(row=5, column=0, padx=10, pady=10, sticky="nsew")
-        self.grid_rowconfigure(5, weight=1)
+        self.log.grid(row=6, column=0, padx=10, pady=10, sticky="nsew")
+        self.grid_rowconfigure(6, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
     def _select_epub(self):
@@ -124,8 +170,58 @@ class MainWindow(tk.Tk):
     def _start_generation(self):
         print("Start Generation button clicked")
 
-    def _open_output_folder(self):
-        print("Open Output Folder button clicked")
+    def _on_text_change(self, event):
+        text = self.preview_text.get("1.0", tk.END).strip()
+        self.synthesize_button['state'] = tk.NORMAL if text else tk.DISABLED
+
+    def _synthesize_preview(self):
+        text = self.preview_text.get("1.0", tk.END).strip()
+        if not text:
+            return
+
+        self.synthesize_button['state'] = tk.DISABLED
+        self.play_button['state'] = tk.DISABLED
+        self.preview_status.set("Synthesizing...")
+
+        thread = threading.Thread(
+            target=self._synthesize_thread,
+            args=(text, self.voice.get(), self.rate_wpm.get()),
+        )
+        thread.start()
+
+    def _synthesize_thread(self, text, voice, rate_wpm):
+        try:
+            out_path = synthesize_preview(text, voice, rate_wpm)
+            self.after(0, self._synthesis_complete, out_path)
+        except Exception as e:
+            self.after(0, self._synthesis_failed, e)
+
+    def _synthesis_complete(self, out_path):
+        self.preview_status.set(f"Audio saved: {out_path}")
+        self.synthesize_button['state'] = tk.NORMAL
+        self.play_button['state'] = tk.NORMAL
+        self.preview_out_path = out_path
+
+    def _synthesis_failed(self, error):
+        self.preview_status.set("Synthesis failed.")
+        self.synthesize_button['state'] = tk.NORMAL
+        messagebox.showerror("TTS Error", f"Synthesis failed: {error}")
+
+    def _play_preview(self):
+        if not hasattr(self, "preview_out_path"):
+            return
+
+        if sa:
+            try:
+                wave_obj = sa.WaveObject.from_wave_file(self.preview_out_path)
+                wave_obj.play()
+            except Exception as e:
+                messagebox.showerror("Playback Error", f"Could not play audio: {e}")
+        else:
+            messagebox.showinfo(
+                "Playback Info",
+                "simpleaudio is not installed. Please install it to enable playback.",
+            )
 
     def _extract_epub(self):
         epub_path = filedialog.askopenfilename(
@@ -140,7 +236,6 @@ class MainWindow(tk.Tk):
 
         self.text_preview.delete("1.0", tk.END)
         self.text_preview.insert(tk.END, extracted_text[:2000])
-
 
 if __name__ == "__main__":
     app = MainWindow()

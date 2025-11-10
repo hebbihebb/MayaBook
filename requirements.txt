@@ -2,3 +2,5 @@ ebooklib
 beautifulsoup4
 requests
 tqdm
+pyttsx3
+simpleaudio
