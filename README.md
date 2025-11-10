@@ -2,7 +2,7 @@
 
 **EPUB → TTS → MP4 Narration Tool**
 
-MayaBook is a lightweight desktop app that turns EPUB books into narrated MP4 videos.
+MayaBook is a lightweight desktop app that turns EPUB books into narrated MP4 audio files.
 It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model via the **Maya1 FastAPI** server to generate expressive human-like speech.
 
 ---
@@ -11,7 +11,7 @@ It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model 
 
 **Input:** an EPUB file
 **Process:** extract text → send to Maya1 FastAPI → receive WAV audio → merge → make MP4
-**Output:** a narrated video with a static or optional waveform cover
+**Output:** a narrated audio file with a static or optional waveform cover
 
 This project keeps things simple:
 
@@ -152,7 +152,7 @@ project_root/
 ## 🧱 **Design Principles**
 
 * Minimal, readable, dependency-light.
-* Modular: each stage (EPUB, TTS, audio, video) can be tested independently.
+* Modular: each stage (EPUB, TTS, audio) can be tested independently.
 * Works cross-platform (Windows/macOS/Linux).
 * Easy to extend later for features like waveform overlays or chapter selection.
 

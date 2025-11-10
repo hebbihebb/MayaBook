@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import threading
 from core.tts_maya1 import list_voices, synthesize_preview
+from core.epub_extract import extract_text
 
 try:
     import simpleaudio as sa
@@ -111,15 +112,28 @@ class MainWindow(tk.Tk):
         actions_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
 
         # Buttons
+        ttk.Button(actions_frame, text="Extract EPUB", command=self._extract_epub).pack(side=tk.LEFT, padx=5)
         ttk.Button(actions_frame, text="Preview 10s", command=self._preview).pack(side=tk.LEFT, padx=5)
         ttk.Button(actions_frame, text="Start Generation", command=self._start_generation).pack(side=tk.LEFT, padx=5)
         ttk.Button(actions_frame, text="Open Output Folder", command=self._open_output_folder).pack(side=tk.LEFT, padx=5)
+
+        # Frame for EPUB text preview (kept from origin/main)
+        preview_frame = ttk.LabelFrame(self, text="EPUB Text Preview")
+        preview_frame.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
+        self.grid_rowconfigure(3, weight=1)
+
+        self.text_preview = tk.Text(preview_frame, wrap=tk.WORD, height=15)
+        self.text_preview_scrollbar = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=self.text_preview.yview)
+        self.text_preview.config(yscrollcommand=self.text_preview_scrollbar.set)
+
+        self.text_preview.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        self.text_preview_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
         # Progress bar
         self.progress = ttk.Progressbar(self, orient=tk.HORIZONTAL, length=100, mode='determinate')
         self.progress.grid(row=4, column=0, padx=10, pady=10, sticky="ew")
 
-        # Preview text
+        # Preview text (kept from HEAD for direct TTS preview input)
         preview_text_frame = ttk.LabelFrame(self, text="Preview Text")
         preview_text_frame.grid(row=5, column=0, padx=10, pady=10, sticky="nsew")
         self.preview_text = tk.Text(preview_text_frame, height=5)
@@ -155,9 +169,6 @@ class MainWindow(tk.Tk):
 
     def _start_generation(self):
         print("Start Generation button clicked")
-
-    def _open_output_folder(self):
-        print("Open Output Folder button clicked")
 
     def _on_text_change(self, event):
         text = self.preview_text.get("1.0", tk.END).strip()
@@ -211,6 +222,20 @@ class MainWindow(tk.Tk):
                 "Playback Info",
                 "simpleaudio is not installed. Please install it to enable playback.",
             )
+
+    def _extract_epub(self):
+        epub_path = filedialog.askopenfilename(
+            title="Select an EPUB file",
+            filetypes=[("EPUB files", "*.epub")]
+        )
+        if not epub_path:
+            return
+
+        self.epub_path.set(epub_path)
+        extracted_text = extract_text(epub_path)
+
+        self.text_preview.delete("1.0", tk.END)
+        self.text_preview.insert(tk.END, extracted_text[:2000])
 
 if __name__ == "__main__":
     app = MainWindow()
