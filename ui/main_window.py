@@ -1,6 +1,9 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 import threading
+import os
+import subprocess
+import sys
 from core.tts_maya1 import list_voices, synthesize_preview
 from core.epub_extract import extract_text
 
@@ -16,6 +19,7 @@ class MainWindow(tk.Tk):
         self.geometry("800x600")
 
         self._create_widgets()
+        self._create_action_buttons()
 
     def _create_widgets(self):
         # Frame for file paths
@@ -107,20 +111,10 @@ class MainWindow(tk.Tk):
         self.play_button.grid(row=2, column=2, padx=5, pady=5)
         self.play_button['state'] = tk.DISABLED
 
-        # Frame for actions
-        actions_frame = ttk.Frame(self)
-        actions_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
-
-        # Buttons
-        ttk.Button(actions_frame, text="Extract EPUB", command=self._extract_epub).pack(side=tk.LEFT, padx=5)
-        ttk.Button(actions_frame, text="Preview 10s", command=self._preview).pack(side=tk.LEFT, padx=5)
-        ttk.Button(actions_frame, text="Start Generation", command=self._start_generation).pack(side=tk.LEFT, padx=5)
-        ttk.Button(actions_frame, text="Open Output Folder", command=self._open_output_folder).pack(side=tk.LEFT, padx=5)
-
         # Frame for EPUB text preview (kept from origin/main)
         preview_frame = ttk.LabelFrame(self, text="EPUB Text Preview")
-        preview_frame.grid(row=3, column=0, padx=10, pady=10, sticky="nsew")
-        self.grid_rowconfigure(3, weight=1)
+        preview_frame.grid(row=4, column=0, padx=10, pady=10, sticky="nsew")
+        self.grid_rowconfigure(4, weight=1)
 
         self.text_preview = tk.Text(preview_frame, wrap=tk.WORD, height=15)
         self.text_preview_scrollbar = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=self.text_preview.yview)
@@ -146,6 +140,21 @@ class MainWindow(tk.Tk):
         self.grid_rowconfigure(6, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
+    def _create_action_buttons(self):
+        # Frame for actions
+        actions_frame = ttk.LabelFrame(self, text="Actions")
+        actions_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
+
+        # Buttons
+        ttk.Button(actions_frame, text="Extract EPUB", command=self._extract_epub).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(actions_frame, text="Preview 10s", command=self._preview).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(actions_frame, text="Start Generation", command=self._start_generation).pack(side=tk.LEFT, padx=5, pady=5)
+        ttk.Button(
+            actions_frame,
+            text="Open Output Folder",
+            command=lambda: self._open_folder(self.output_folder.get())
+        ).pack(side=tk.LEFT, padx=5, pady=5)
+
     def _select_epub(self):
         path = filedialog.askopenfilename(filetypes=[("EPUB files", "*.epub")])
         if path:
@@ -169,6 +178,20 @@ class MainWindow(tk.Tk):
 
     def _start_generation(self):
         print("Start Generation button clicked")
+
+    def _open_folder(self, path):
+        if not os.path.isdir(path):
+            messagebox.showerror("Error", f"Folder not found:\n{path}")
+            return
+        try:
+            if sys.platform == "win32":
+                os.startfile(path)
+            elif sys.platform == "darwin":
+                subprocess.run(["open", path])
+            else:
+                subprocess.run(["xdg-open", path])
+        except OSError as e:
+            messagebox.showerror("Error", f"Failed to open folder:\n{e}")
 
     def _on_text_change(self, event):
         text = self.preview_text.get("1.0", tk.END).strip()
