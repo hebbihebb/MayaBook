@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 *.log
+
+# Ignore gguf model files (large binary models) stored in assets
+assets/*.gguf
