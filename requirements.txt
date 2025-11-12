@@ -1,6 +1,7 @@
 ebooklib
 beautifulsoup4
-requests
-tqdm
-pyttsx3
-simpleaudio
+llama-cpp-python
+snac
+soundfile
+numpy
+torch
