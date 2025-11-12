@@ -97,8 +97,8 @@ class MainWindow(tk.Tk):
         self.top_p = tk.DoubleVar(value=0.92)
         ttk.Entry(tts_frame, textvariable=self.top_p, width=10).grid(row=2, column=1, padx=5, pady=5, sticky="w")
 
-        ttk.Label(tts_frame, text="Chunk Size (chars):").grid(row=3, column=0, padx=5, pady=5, sticky="w")
-        self.chunk_size = tk.IntVar(value=1200)
+        ttk.Label(tts_frame, text="Chunk Size (words):").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+        self.chunk_size = tk.IntVar(value=90)
         ttk.Entry(tts_frame, textvariable=self.chunk_size, width=10).grid(row=3, column=1, padx=5, pady=5, sticky="w")
 
         ttk.Label(tts_frame, text="Gap (seconds):").grid(row=4, column=0, padx=5, pady=5, sticky="w")

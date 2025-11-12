@@ -29,8 +29,8 @@ def main():
                         help='Temperature for generation (0.3-0.5 recommended)')
     parser.add_argument('--top-p', type=float, default=0.9,
                         help='Top-p for generation (0.9 recommended)')
-    parser.add_argument('--max-tokens', type=int, default=3000,
-                        help='Max tokens to generate per chunk (2000-4000 recommended)')
+    parser.add_argument('--max-tokens', type=int, default=2500,
+                        help='Max tokens to generate per chunk (2000-3000 recommended for 80-100 word chunks)')
     parser.add_argument('--ctx', type=int, default=4096,
                         help='Context size')
     parser.add_argument('--gpu-layers', type=int, default=-1,

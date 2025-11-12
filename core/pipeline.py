@@ -34,8 +34,8 @@ def run_pipeline(
     top_p: float = 0.9,
     n_ctx: int = 4096,
     n_gpu_layers: int = -1,
-    workers: int = 2,
-    max_tokens: int = 3000,
+    workers: int = 1,
+    max_tokens: int = 2500,
     progress_cb=None,
     stop_flag=None,
 ):

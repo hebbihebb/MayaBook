@@ -1,6 +1,7 @@
 # core/tts_maya1_local.py
 import tempfile, torch, soundfile as sf
 import logging
+import threading
 from llama_cpp import Llama
 from snac import SNAC
 from .maya1_constants import (
@@ -13,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 _llm = None
 _snac = None
+_llm_lock = threading.Lock()  # Protect LLM from concurrent access
 
 def _ensure_models(model_path: str, n_ctx: int = 4096, n_gpu_layers: int | None = None):
     global _llm, _snac
@@ -95,14 +97,18 @@ def synthesize_chunk_local(
     llm, snac_model = _ensure_models(model_path, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers)
     prompt_tokens = _build_prompt_tokens(llm, voice_description, text)
 
-    out = llm(
-        prompt=prompt_tokens,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        top_p=top_p,
-        repeat_penalty=1.1,
-        echo=False,
-    )
+    # Use lock to prevent concurrent access to LLM (llama.cpp is not thread-safe)
+    with _llm_lock:
+        logger.debug("Acquired LLM lock, starting generation...")
+        out = llm(
+            prompt=prompt_tokens,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            repeat_penalty=1.1,
+            echo=False,
+        )
+        logger.debug("Generation complete, releasing LLM lock")
 
     # Debug: log the output structure to understand what keys are available
     logger.debug(f"LLM output keys: {out.keys() if hasattr(out, 'keys') else type(out)}")

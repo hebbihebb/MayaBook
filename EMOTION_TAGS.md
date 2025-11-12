@@ -1,19 +1,41 @@
 # Maya1 Emotion Tags Guide
 
-⚠️ **IMPORTANT**: Emotion tags work best with the full HuggingFace Transformers version of Maya1. The GGUF quantized version used in this project **may vocalize tags as literal text** instead of processing them as emotions.
+⚠️ **CRITICAL LIMITATION**: Emotion tags **DO NOT WORK** with GGUF quantized models. The GGUF version **will vocalize tags as literal text** (e.g., "less than laugh greater than") instead of processing them as emotions.
 
-**Current Status**: Testing shows that emotion tags like `<laugh>`, `<cry>` are spoken out loud rather than applied as effects in the GGUF version.
+**Current Status**: Confirmed through testing that emotion tags like `<laugh>`, `<cry>`, `<whisper>`, `<sigh>`, etc. are spoken out loud in the GGUF version.
 
-## Recommended Approach for GGUF Users
+**Why?** The quantization process that creates GGUF models can lose specialized behaviors like emotion tag processing that were present in the full HuggingFace Transformers model.
 
-Instead of using emotion tags, describe the desired emotion in the **voice description**:
+## ✅ Solution: Use Voice Descriptions Instead
+
+Instead of embedding emotion tags in text, describe the desired emotion and tone in your **voice description**:
 
 ```python
-# Instead of: "Hello there! <laugh> That's funny!"
-# Use voice description:
+# ❌ DON'T: Use emotion tags (they'll be read out loud)
+text = "Hello there! <laugh> That's funny!"
+
+# ✅ DO: Describe emotion in voice description
 voice_desc = "Female voice, cheerful and laughing while speaking"
 text = "Hello there! That's funny!"
 ```
+
+### Example Voice Descriptions
+
+**For laughter/joy:**
+- "Female voice, cheerful and laughing, warm and friendly tone"
+- "Male voice with occasional chuckles, jovial and upbeat"
+
+**For sadness/crying:**
+- "Female voice, sad and emotional, verge of tears, gentle and soft"
+- "Male voice, melancholic and subdued, slightly shaky"
+
+**For anger:**
+- "Female voice, stern and firm, slightly raised volume, tense"
+- "Male voice, irritated and sharp, clipped speech"
+
+**For whispers:**
+- "Female voice, whispering softly, intimate and hushed"
+- "Male voice, speaking in a low whisper, secretive"
 
 ---
 
