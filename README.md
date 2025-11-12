@@ -25,7 +25,7 @@ This project keeps things simple:
 ## 🧠 **How It Works**
 
 1. **Extract Text**
-   The app reads an EPUB, cleans it to plain text, and splits it into small chunks (~1200 characters for optimal synthesis).
+   The app reads an EPUB, cleans it to plain text, and splits it into small chunks (recommended: 80-100 words per chunk for optimal TTS quality).
 
 2. **Generate Audio Locally**
    Each chunk is synthesized using the **Maya1 GGUF model** via `llama-cpp-python`:
@@ -34,6 +34,7 @@ This project keeps things simple:
    * SNAC codec decodes tokens into 24 kHz audio waveforms
    * Each chunk is saved as a temporary WAV file
    * Multi-threaded synthesis processes multiple chunks in parallel
+   * Supports **emotion tags** like `<laugh>`, `<cry>`, `<angry>` for expressive speech (see [EMOTION_TAGS.md](EMOTION_TAGS.md))
 
 3. **Combine Audio**
    All chunk WAVs are concatenated into a single `book.wav`, with configurable silence gaps between chunks.
@@ -156,12 +157,13 @@ This creates dummy files for initial testing without real assets.
    * **Configure GGUF settings:**
      - `n_ctx`: Context window size (default: 4096)
      - `n_gpu_layers`: Number of layers to offload to GPU (default: -1 for all)
-   * **Describe the voice** - E.g., "A female speaker with a warm, calm voice"
+   * **Describe the voice** - E.g., "Female voice in her 30s, warm and expressive, natural American accent"
    * **Adjust synthesis parameters:**
      - Temperature (0.4-0.5 recommended)
      - Top-p (0.9-0.95 recommended)
-     - Chunk size (1000-1500 characters)
+     - Chunk size (80-100 words recommended, or 1000-1500 characters)
      - Gap between chunks (0.2-0.5 seconds)
+   * **Add emotion tags** (optional) - See [EMOTION_TAGS.md](EMOTION_TAGS.md) for supported tags like `<laugh>`, `<cry>`, etc.
    * Click **Extract EPUB** to preview the text
    * Click **Start Generation** to begin synthesis
 

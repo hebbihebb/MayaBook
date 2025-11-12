@@ -2,5 +2,10 @@ __pycache__/
 *.pyc
 *.log
 
+# Output files
+output/
+*.wav
+*.mp4
+
 # Ignore gguf model files (large binary models) in all directories
 *.gguf

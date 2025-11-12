@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python app.py:*)",
+      "Bash(pip install:*)",
+      "Bash(timeout:*)",
+      "Bash(exit 0)",
+      "Bash(where:*)",
+      "Bash(python test_cli.py:*)",
+      "Bash(dir:*)",
+      "Bash(ffmpeg -version:*)",
+      "Bash(findstr:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
