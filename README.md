@@ -3,53 +3,48 @@
 **EPUB → TTS → MP4 Narration Tool**
 
 MayaBook is a lightweight desktop app that turns EPUB books into narrated MP4 audio files.
-It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model via the **Maya1 FastAPI** server to generate expressive human-like speech.
+It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model running locally via **GGUF quantized models** and `llama-cpp-python` to generate expressive human-like speech.
 
 ---
 
 ## ✨ **Overview**
 
 **Input:** an EPUB file
-**Process:** extract text → send to Maya1 FastAPI → receive WAV audio → merge → make MP4
-**Output:** a narrated audio file with a static or optional waveform cover
+**Process:** extract text → synthesize with local Maya1 GGUF → generate WAV audio → merge → make MP4
+**Output:** a narrated audio file with a static cover image
 
 This project keeps things simple:
 
-* No alignment, subtitles, or M4B audio.
-* No online dependencies beyond the local Maya1 server.
-* Minimal Python packages and a single clean GUI.
+* Fully local processing with no external servers
+* No alignment, subtitles, or M4B audio
+* GPU acceleration support via `llama-cpp-python`
+* Minimal Python packages and a single clean GUI
 
 ---
 
 ## 🧠 **How It Works**
 
 1. **Extract Text**
-   The app reads an EPUB, cleans it to plain text, and splits it into small chunks (~400–600 characters).
+   The app reads an EPUB, cleans it to plain text, and splits it into small chunks (~1200 characters for optimal synthesis).
 
-2. **Generate Audio**
-   Each chunk is sent to a locally running **Maya1 FastAPI** server:
+2. **Generate Audio Locally**
+   Each chunk is synthesized using the **Maya1 GGUF model** via `llama-cpp-python`:
 
-   ```json
-   POST /v1/tts/generate
-   {
-     "description": "Female, 30s, calm narrator with British accent",
-     "text": "Once upon a time...",
-     "temperature": 0.4,
-     "top_p": 0.9
-   }
-   ```
-
-   The server returns a 24 kHz mono WAV file.
+   * The model generates SNAC audio tokens from text and voice description
+   * SNAC codec decodes tokens into 24 kHz audio waveforms
+   * Each chunk is saved as a temporary WAV file
+   * Multi-threaded synthesis processes multiple chunks in parallel
 
 3. **Combine Audio**
-   All chunks are concatenated into a single `book.wav`, inserting short silence gaps for pacing.
+   All chunk WAVs are concatenated into a single `book.wav`, with configurable silence gaps between chunks.
 
 4. **Export MP4**
    A cover image is combined with the audio using FFmpeg:
 
    ```bash
-   ffmpeg -loop 1 -framerate 2 -i cover.jpg -i book.wav \
-          -c:v libx264 -preset fast -crf 18 -c:a aac -b:a 160k -shortest output.mp4
+   ffmpeg -loop 1 -i cover.jpg -i book.wav \
+          -c:v libx264 -tune stillimage -c:a aac -b:a 192k \
+          -shortest output.mp4
    ```
 
 ---
@@ -58,14 +53,17 @@ This project keeps things simple:
 
 * **EPUB file picker**
 * **Cover image selector**
+* **Model path selector** (GGUF file)
 * **Output folder selector**
-* **Voice description** (multi-line text)
-* **Temperature / Top-p sliders**
-* **Chunk length / silence gap sliders**
-* **Buttons:** Preview 10 s · Generate MP4 · Open Output Folder
-* **Progress bar and log area**
+* **GGUF configuration:** n_ctx, n_gpu_layers
+* **Voice description** (multi-line text for voice characteristics)
+* **Temperature / Top-p controls**
+* **Chunk size / silence gap controls**
+* **Buttons:** Extract EPUB · Start Generation · Cancel · Open Output Folder
+* **Real-time progress bar and log area**
+* **Threaded execution** (non-blocking UI)
 
-All implemented with **Tkinter** for zero-dependency simplicity.
+All implemented with **Tkinter** for cross-platform simplicity.
 
 ---
 
@@ -76,57 +74,107 @@ All implemented with **Tkinter** for zero-dependency simplicity.
 ```
 ebooklib
 beautifulsoup4
-requests
-tqdm
+llama-cpp-python
+snac
+soundfile
+numpy
+torch
 ```
 
 **System requirements**
 
-* Python 3.10 +
-* FFmpeg in PATH
-* Running **Maya1 FastAPI** server
-  (from [https://github.com/MayaResearch/maya1-fastapi](https://github.com/MayaResearch/maya1-fastapi))
+* Python 3.10+
+* FFmpeg in PATH (for MP4 export)
+* CUDA-compatible GPU recommended (CPU inference is supported but slow)
+* **Maya1 GGUF model file** (download separately, ~15GB)
+  - Download from: [https://huggingface.co/maya-research/maya1](https://huggingface.co/maya-research/maya1)
+  - Recommended: `maya1.i1-Q5_K_M.gguf` (quantized for efficiency)
 
 ---
 
 ## 🚀 **Installation**
 
+### 1. Clone the repository
+
 ```bash
 git clone https://github.com/<yourname>/MayaBook
 cd MayaBook
+```
+
+### 2. Set up Python environment
+
+```bash
 python -m venv .venv
 source .venv/bin/activate    # or .venv\Scripts\activate on Windows
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
+
+**Note:** For GPU acceleration, ensure you have CUDA installed and use:
+```bash
+pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
+```
+
+### 3. Download the Maya1 GGUF model
+
+Download the quantized GGUF model from Hugging Face:
+- Visit: https://huggingface.co/maya-research/maya1
+- Download: `maya1.i1-Q5_K_M.gguf` (~15GB)
+- Place it in: `assets/models/maya1.i1-Q5_K_M.gguf`
+
+Or use the command line:
+```bash
+mkdir -p assets/models
+cd assets/models
+# Use huggingface-cli or wget to download the model
+# huggingface-cli download maya-research/maya1 maya1.i1-Q5_K_M.gguf
+```
+
+### 4. Create placeholder files for testing (optional)
+
+```bash
+python create_placeholders.py
+```
+
+This creates dummy files for initial testing without real assets.
 
 ---
 
 ## ▶️ **Usage**
 
-1. **Start Maya1 FastAPI**
-
-   ```bash
-   git clone https://github.com/MayaResearch/maya1-fastapi
-   cd maya1-fastapi
-   pip install -r requirements.txt
-   python server.py
-   ```
-
-   It will run at `http://localhost:8000`.
-
-2. **Run MayaBook**
+1. **Run MayaBook**
 
    ```bash
    python app.py
    ```
 
-3. In the GUI:
+2. **In the GUI:**
 
-   * Pick your EPUB and cover image
-   * Describe the voice and emotions
-   * Click **Preview 10 s** or **Generate MP4**
+   * **Select EPUB file** - Browse to your .epub file
+   * **Select cover image** - Choose a .jpg or .png for the video
+   * **Select model path** - Browse to your downloaded `maya1.i1-Q5_K_M.gguf`
+   * **Configure GGUF settings:**
+     - `n_ctx`: Context window size (default: 4096)
+     - `n_gpu_layers`: Number of layers to offload to GPU (default: -1 for all)
+   * **Describe the voice** - E.g., "A female speaker with a warm, calm voice"
+   * **Adjust synthesis parameters:**
+     - Temperature (0.4-0.5 recommended)
+     - Top-p (0.9-0.95 recommended)
+     - Chunk size (1000-1500 characters)
+     - Gap between chunks (0.2-0.5 seconds)
+   * Click **Extract EPUB** to preview the text
+   * Click **Start Generation** to begin synthesis
 
-4. Wait until the MP4 appears in your output folder.
+3. **Monitor progress:**
+
+   * Progress bar shows chunk completion
+   * Log area displays real-time status
+   * Use **Cancel** to stop generation early
+
+4. **Output files:**
+
+   The final MP4 and WAV files will be saved to your output folder.
+   Click **Open Output Folder** to view them.
 
 ---
 
@@ -135,35 +183,73 @@ pip install -r requirements.txt
 ```
 project_root/
 │
-├─ app.py                  # main entry point
+├─ app.py                      # Main entry point
+├─ create_placeholders.py      # Generate test files
 │
 ├─ core/
-│   ├─ epub_extract.py     # EPUB → text chunks
-│   ├─ tts_maya1.py        # calls Maya1 FastAPI
-│   ├─ audio_combine.py    # merges WAV chunks
-│   └─ video_export.py     # ffmpeg MP4 assembly
+│   ├─ maya1_constants.py      # SNAC token constants
+│   ├─ tts_maya1_local.py      # Local GGUF synthesis
+│   ├─ epub_extract.py         # EPUB → plain text
+│   ├─ chunking.py             # Text → sentence chunks
+│   ├─ audio_combine.py        # Merge WAV chunks
+│   ├─ video_export.py         # FFmpeg MP4 assembly
+│   └─ pipeline.py             # End-to-end orchestration
 │
-└─ ui/
-    └─ main_window.py      # Tkinter GUI
+├─ ui/
+│   └─ main_window.py          # Tkinter GUI
+│
+└─ assets/
+    ├─ models/                 # GGUF model files (ignored by git)
+    └─ test/                   # Sample EPUB and cover for testing
 ```
 
 ---
 
 ## 🧱 **Design Principles**
 
-* Minimal, readable, dependency-light.
-* Modular: each stage (EPUB, TTS, audio) can be tested independently.
-* Works cross-platform (Windows/macOS/Linux).
-* Easy to extend later for features like waveform overlays or chapter selection.
+* **Fully local processing** - No external servers or API calls
+* **GPU acceleration** - Leverages CUDA for fast synthesis
+* **Modular architecture** - Each stage (EPUB, TTS, audio, video) is independently testable
+* **Thread safety** - Multi-threaded synthesis with proper locking
+* **Cross-platform** - Works on Windows/macOS/Linux
+* **Minimal dependencies** - Clean, focused codebase
+* **Easy to extend** - Add features like chapter markers or multi-voice support
 
 ---
 
 ## ❌ **Out of Scope**
 
-* No multi-voice support.
-* No forced alignment or word timings.
-* No streaming or cloud integration.
-* No subtitle generation.
+* Multi-voice support (single narrator only)
+* Forced alignment or word-level timings
+* Cloud/API integration (fully local)
+* Subtitle/caption generation
+* M4B audiobook format
+* Chapter-based navigation
+
+## 🐛 **Troubleshooting**
+
+**"No module named 'llama_cpp'"**
+- Ensure you installed `llama-cpp-python`: `pip install llama-cpp-python`
+- For GPU support, reinstall with CUDA wheels (see Installation section)
+
+**"CUDA out of memory"**
+- Reduce `n_gpu_layers` in the GUI (try 20-30 instead of -1)
+- Reduce `n_ctx` to 2048 or lower
+- Close other GPU-intensive applications
+
+**"Model file not found"**
+- Verify the GGUF file path is correct
+- Ensure the file is named exactly `maya1.i1-Q5_K_M.gguf`
+- Check file size (~15GB) - partial downloads will fail
+
+**Synthesis is very slow**
+- Enable GPU layers (`n_gpu_layers = -1` for all layers)
+- Ensure CUDA is properly installed
+- Try a more quantized model (Q4 instead of Q5)
+
+**FFmpeg error during MP4 export**
+- Install FFmpeg and add to PATH
+- Verify: `ffmpeg -version` in terminal
 
 ---
 
@@ -176,7 +262,8 @@ MIT License — you are free to use, modify, and distribute this project.
 ## ❤️ **Credits**
 
 * **Maya1 Model & SNAC Codec:** [Maya Research](https://huggingface.co/maya-research/maya1)
-* **Maya1 FastAPI Server:** [Maya Research GitHub](https://github.com/MayaResearch/maya1-fastapi)
-* **App Concept & Integration Design:** Project MayaBook contributors
+* **llama.cpp & llama-cpp-python:** [ggerganov](https://github.com/ggerganov/llama.cpp) & [abetlen](https://github.com/abetlen/llama-cpp-python)
+* **SNAC Audio Codec:** [hubertsiuzdak](https://github.com/hubertsiuzdak/snac)
+* **App Design & Integration:** MayaBook contributors
 
 ---

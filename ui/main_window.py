@@ -4,6 +4,7 @@ import threading
 import os
 import subprocess
 import sys
+import shutil
 from pathlib import Path
 
 # Assuming these modules exist and are correct
@@ -65,8 +66,9 @@ class MainWindow(tk.Tk):
         model_frame.grid_columnconfigure(1, weight=1)
 
         ttk.Label(model_frame, text="Model Path (GGUF):").grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        self.model_path = tk.StringVar()
-        ttk.Entry(model_frame, textvariable=self.model_path, width=60).grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        self.model_path = tk.StringVar(value="assets/models/maya1.i1-Q5_K_M.gguf")
+        model_entry = ttk.Entry(model_frame, textvariable=self.model_path, width=60)
+        model_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
         ttk.Button(model_frame, text="Browse...", command=self._select_model).grid(row=0, column=2, padx=5, pady=5)
 
         ttk.Label(model_frame, text="n_ctx:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
@@ -200,13 +202,41 @@ class MainWindow(tk.Tk):
             return
 
         model_path = self.model_path.get()
-        if not model_path or not os.path.exists(model_path):
-            messagebox.showerror("Error", "Please select a valid GGUF model file.")
+        if not model_path:
+            messagebox.showerror("Error", "Please select a GGUF model file.")
             return
+
+        if not os.path.exists(model_path):
+            messagebox.showerror("Model Not Found",
+                f"GGUF model file not found:\n{model_path}\n\n"
+                "Please download maya1.i1-Q5_K_M.gguf from:\n"
+                "https://huggingface.co/maya-research/maya1\n\n"
+                "Or run: python create_placeholders.py")
+            return
+
+        # Check if model file is too small (likely a placeholder)
+        model_size = os.path.getsize(model_path)
+        if model_size < 1_000_000:  # Less than 1MB is suspicious
+            response = messagebox.askyesno("Warning: Small Model File",
+                f"The model file is only {model_size:,} bytes.\n"
+                "This appears to be a placeholder, not a real model.\n\n"
+                "Synthesis will likely fail. Continue anyway?")
+            if not response:
+                return
 
         cover_path = self.cover_path.get()
         if not cover_path or not os.path.exists(cover_path):
             messagebox.showerror("Error", "Please select a valid cover image.")
+            return
+
+        # Check for FFmpeg
+        if not shutil.which("ffmpeg"):
+            messagebox.showerror("FFmpeg Not Found",
+                "FFmpeg is required for MP4 export but was not found in PATH.\n\n"
+                "Please install FFmpeg:\n"
+                "- Windows: Download from ffmpeg.org and add to PATH\n"
+                "- macOS: brew install ffmpeg\n"
+                "- Linux: sudo apt install ffmpeg")
             return
 
         output_dir = self.output_folder.get()
