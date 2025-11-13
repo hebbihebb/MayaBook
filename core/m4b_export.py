@@ -62,8 +62,8 @@ def create_m4b_stream(
         proc = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=subprocess.DEVNULL,  # Don't capture stdout to avoid buffer issues
+            stderr=subprocess.DEVNULL,  # Don't capture stderr to avoid buffer issues
             text=False,  # Binary mode for audio data
         )
         return proc

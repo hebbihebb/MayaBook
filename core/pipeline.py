@@ -432,7 +432,20 @@ def run_pipeline_with_chapters(
             elif ffmpeg_proc:
                 ffmpeg_proc.stdin.close()
                 ffmpeg_proc.wait()
+
+                # Check if FFmpeg completed successfully
+                if ffmpeg_proc.returncode != 0:
+                    raise RuntimeError(f"FFmpeg M4B creation failed with code {ffmpeg_proc.returncode}")
+
                 logger.info(f"M4B stream finalized: {merged_path}")
+
+                # Verify file was created and is valid
+                if not os.path.exists(merged_path):
+                    raise RuntimeError(f"M4B file was not created: {merged_path}")
+
+                # Give FFmpeg a moment to flush the file
+                import time
+                time.sleep(0.5)
 
                 # Add chapters to M4B if multiple chapters
                 if len(chapters) > 1:
