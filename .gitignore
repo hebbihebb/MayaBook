@@ -13,3 +13,14 @@ output/
 # Ignore safetensor model directories
 assets/models/maya1_4bit_safetensor/
 
+# Temporary files
+temp_*.txt
+tmp_*.py
+*.tmp
+
+# User output directory
+MayaBook_Output/
+
+# Temp download directories
+temp_download_*/
+

@@ -24,11 +24,24 @@ def extract_text(epub_path: str) -> str:
         text_content = ""
         for chapter in chapters:
             soup = BeautifulSoup(chapter, 'html.parser')
-            text = soup.get_text()
-            text_content += text + "\n\n"
+
+            # Extract text from each paragraph separately to preserve paragraph breaks
+            paragraphs = soup.find_all('p')
+            if paragraphs:
+                for p in paragraphs:
+                    p_text = p.get_text().strip()
+                    if p_text:  # Only add non-empty paragraphs
+                        text_content += p_text + "\n\n"
+            else:
+                # Fallback to whole text if no <p> tags found
+                text = soup.get_text()
+                text_content += text + "\n\n"
 
         logging.info("Text extraction successful.")
-        return text_content.strip()
+        # Normalize whitespace: replace non-breaking spaces and multiple newlines
+        text_content = text_content.replace('\xa0', ' ')  # Replace non-breaking space with regular space
+        text_content = text_content.strip()
+        return text_content
 
     except Exception as e:
         logging.error(f"Error extracting text from EPUB: {e}")

@@ -5,6 +5,8 @@
 MayaBook is a lightweight desktop app that turns EPUB books into narrated MP4 audio files.
 It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model running locally via **GGUF quantized models** and `llama-cpp-python` to generate expressive human-like speech.
 
+![MayaBook GUI](screenshot.jpg)
+
 ---
 
 ## ✨ **Overview**

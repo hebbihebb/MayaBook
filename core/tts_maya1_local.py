@@ -2,6 +2,8 @@
 import tempfile, torch, soundfile as sf
 import logging
 import threading
+import numpy as np
+import zlib
 from llama_cpp import Llama
 from snac import SNAC
 from .maya1_constants import (
@@ -15,6 +17,9 @@ logger = logging.getLogger(__name__)
 _llm = None
 _snac = None
 _llm_lock = threading.Lock()  # Protect LLM from concurrent access
+
+MAX_GEN_ATTEMPTS = 3
+MIN_AUDIO_RMS = 1e-3
 
 def _ensure_models(model_path: str, n_ctx: int = 4096, n_gpu_layers: int | None = None):
     global _llm, _snac
@@ -30,6 +35,10 @@ def _ensure_models(model_path: str, n_ctx: int = 4096, n_gpu_layers: int | None 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         _snac = SNAC.from_pretrained("hubertsiuzdak/snac_24khz").eval().to(device)
     return _llm, _snac
+
+def _prompt_seed(text: str, voice_description: str) -> int:
+    data = f"{voice_description}\n{text}".encode("utf-8")
+    return zlib.crc32(data) & 0x7FFFFFFF
 
 def _build_prompt_tokens(llm, description: str, text: str) -> list[int]:
     # Use the recommended format: <description="voice_desc"> text
@@ -94,82 +103,91 @@ def synthesize_chunk_local(
     n_ctx: int = 4096,
     n_gpu_layers: int | None = None,
 ) -> str:
+    logger.info(f"Synthesizing text (length={len(text)} chars): {text[:100]}...")
     llm, snac_model = _ensure_models(model_path, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers)
     prompt_tokens = _build_prompt_tokens(llm, voice_description, text)
+    base_seed = _prompt_seed(text, voice_description)
 
-    # Use lock to prevent concurrent access to LLM (llama.cpp is not thread-safe)
-    with _llm_lock:
-        logger.debug("Acquired LLM lock, starting generation...")
-        out = llm(
-            prompt=prompt_tokens,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            top_p=top_p,
-            repeat_penalty=1.1,
-            echo=False,
-        )
-        logger.debug("Generation complete, releasing LLM lock")
+    def _generate_audio(seed: int):
+        # Use lock to prevent concurrent access to LLM (llama.cpp is not thread-safe)
+        with _llm_lock:
+            logger.debug(f"Acquired LLM lock, starting generation (seed={seed})...")
+            # Reset KV cache to ensure clean state for each generation
+            llm.reset()
+            out = llm(
+                prompt=prompt_tokens,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                repeat_penalty=1.1,
+                echo=False,
+                seed=seed,
+            )
+            logger.debug("Generation complete, releasing LLM lock")
 
-    # Debug: log the output structure to understand what keys are available
-    logger.debug(f"LLM output keys: {out.keys() if hasattr(out, 'keys') else type(out)}")
-    if "choices" in out:
-        logger.debug(f"Choices[0] keys: {out['choices'][0].keys()}")
+        logger.debug(f"LLM output keys: {out.keys() if hasattr(out, 'keys') else type(out)}")
+        if "choices" in out:
+            logger.debug(f"Choices[0] keys: {out['choices'][0].keys()}")
 
-    # Try different possible key names for the generated tokens
-    try:
-        gen_ids = out["choices"][0]["completion_tokens"]
-    except KeyError:
-        # Alternative key names used by llama-cpp-python
-        if "tokens" in out["choices"][0]:
-            gen_ids = out["choices"][0]["tokens"]
-            logger.debug("Using 'tokens' key")
-        elif "text" in out["choices"][0]:
-            # If we only have text, we need to tokenize it back
-            text_output = out["choices"][0]["text"]
+        choice = out["choices"][0]
+        if "completion_tokens" in choice:
+            gen_ids = choice["completion_tokens"]
+            logger.debug("Using 'completion_tokens' from llama.cpp response")
+        elif "tokens" in choice:
+            gen_ids = choice["tokens"]
+            logger.debug("Using 'tokens' key from llama.cpp response")
+        else:
+            text_output = choice["text"]
             gen_ids = llm.tokenize(text_output.encode("utf-8"), add_bos=False)
             logger.debug("Using 'text' key (re-tokenized)")
-        else:
-            logger.error(f"Available keys in choices[0]: {list(out['choices'][0].keys())}")
-            raise KeyError("Could not find tokens in LLM output. Check available keys in log.")
 
-    logger.debug(f"Generated {len(gen_ids)} total tokens")
-    snac_ids = _extract_snac_ids(gen_ids)
-    logger.debug(f"Extracted {len(snac_ids)} SNAC audio tokens")
+        logger.debug(f"Generated {len(gen_ids)} total tokens")
+        snac_ids = _extract_snac_ids(gen_ids)
+        logger.debug(f"Extracted {len(snac_ids)} SNAC audio tokens")
 
-    L1, L2, L3 = _unpack_snac_from_7(snac_ids)
-    logger.debug(f"Unpacked SNAC: L1={len(L1)}, L2={len(L2)}, L3={len(L3)} codes")
+        L1, L2, L3 = _unpack_snac_from_7(snac_ids)
+        logger.debug(f"Unpacked SNAC: L1={len(L1)}, L2={len(L2)}, L3={len(L3)} codes")
 
-    if not L1 or not L2 or not L3:
-        logger.error(f"No audio frames produced. Gen_ids sample: {gen_ids[:20]}")
-        raise RuntimeError("No audio frames produced (check description/prompt shape).")
+        if not L1 or not L2 or not L3:
+            logger.error(f"No audio frames produced. Gen_ids sample: {gen_ids[:20]}")
+            raise RuntimeError("No audio frames produced (check description/prompt shape).")
 
-    device = next(snac_model.parameters()).device
-    with torch.inference_mode():
-        codes_tensor = [
-            torch.tensor(L1, dtype=torch.long, device=device).unsqueeze(0),
-            torch.tensor(L2, dtype=torch.long, device=device).unsqueeze(0),
-            torch.tensor(L3, dtype=torch.long, device=device).unsqueeze(0),
-        ]
-        z_q = snac_model.quantizer.from_codes(codes_tensor)
-        audio = snac_model.decoder(z_q).cpu().numpy()
+        device = next(snac_model.parameters()).device
+        with torch.inference_mode():
+            codes_tensor = [
+                torch.tensor(L1, dtype=torch.long, device=device).unsqueeze(0),
+                torch.tensor(L2, dtype=torch.long, device=device).unsqueeze(0),
+                torch.tensor(L3, dtype=torch.long, device=device).unsqueeze(0),
+            ]
+            z_q = snac_model.quantizer.from_codes(codes_tensor)
+            audio = snac_model.decoder(z_q).cpu().numpy()
 
-    logger.debug(f"Audio shape before processing: {audio.shape}")
+        audio = audio.squeeze()
+        if audio.ndim > 1:
+            logger.warning(f"Audio still has {audio.ndim} dimensions after squeeze, taking first channel")
+            audio = audio[0]
 
-    # Flatten/squeeze the audio to 1D array for soundfile
-    # Expected shape from SNAC decoder might be (1, 1, samples) or (1, samples)
-    audio = audio.squeeze()  # Remove all dimensions of size 1
+        if len(audio) > 2048:
+            audio = audio[2048:]
 
-    logger.debug(f"Audio shape after squeeze: {audio.shape}")
+        logger.debug(f"Final audio shape: {audio.shape}, duration: {len(audio)/24000:.2f}s")
+        return audio
 
-    if audio.ndim > 1:
-        # If still multi-dimensional, take the first channel
-        logger.warning(f"Audio still has {audio.ndim} dimensions after squeeze, taking first channel")
-        audio = audio[0]
+    audio = None
+    for attempt in range(MAX_GEN_ATTEMPTS):
+        seed = (base_seed + attempt) & 0x7FFFFFFF
+        audio = _generate_audio(seed)
+        rms = float(np.sqrt(np.mean(np.square(audio))))
+        logger.debug(f"Audio RMS for attempt {attempt+1}: {rms:.6f}")
+        if rms >= MIN_AUDIO_RMS:
+            break
+        logger.warning(
+            f"Audio RMS {rms:.6f} below threshold ({MIN_AUDIO_RMS}); retrying with new seed"
+        )
+        audio = None
 
-    if len(audio) > 2048:
-        audio = audio[2048:]
-
-    logger.debug(f"Final audio shape: {audio.shape}, duration: {len(audio)/24000:.2f}s")
+    if audio is None:
+        raise RuntimeError("Unable to synthesize non-silent audio after multiple attempts.")
 
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
     sf.write(tmp.name, audio, 24000)
