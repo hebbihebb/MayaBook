@@ -9,3 +9,7 @@ output/
 
 # Ignore gguf model files (large binary models) in all directories
 *.gguf
+
+# Ignore safetensor model directories
+assets/models/maya1_4bit_safetensor/
+

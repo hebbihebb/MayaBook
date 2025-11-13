@@ -60,24 +60,34 @@ class MainWindow(tk.Tk):
         ttk.Entry(file_frame, textvariable=self.output_folder, width=60).grid(row=2, column=1, padx=5, pady=5, sticky="ew")
         ttk.Button(file_frame, text="Browse...", command=self._select_output).grid(row=2, column=2, padx=5, pady=5)
 
-        # --- GGUF Model Settings ---
-        model_frame = ttk.LabelFrame(main_frame, text="GGUF Model Settings")
+        # --- Model Settings ---
+        model_frame = ttk.LabelFrame(main_frame, text="Model Settings")
         model_frame.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
         model_frame.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(model_frame, text="Model Path (GGUF):").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        ttk.Label(model_frame, text="Model Type:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.model_type = tk.StringVar(value="gguf")
+        model_type_combo = ttk.Combobox(model_frame, textvariable=self.model_type, values=["gguf", "huggingface"], state="readonly", width=15)
+        model_type_combo.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        model_type_combo.bind("<<ComboboxSelected>>", self._on_model_type_change)
+
+        ttk.Label(model_frame, text="Model Path:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.model_path = tk.StringVar(value="assets/models/maya1.i1-Q5_K_M.gguf")
         model_entry = ttk.Entry(model_frame, textvariable=self.model_path, width=60)
-        model_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
-        ttk.Button(model_frame, text="Browse...", command=self._select_model).grid(row=0, column=2, padx=5, pady=5)
+        model_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Button(model_frame, text="Browse...", command=self._select_model).grid(row=1, column=2, padx=5, pady=5)
 
-        ttk.Label(model_frame, text="n_ctx:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        # GGUF-specific settings (shown/hidden based on model type)
+        self.gguf_settings_frame = ttk.Frame(model_frame)
+        self.gguf_settings_frame.grid(row=2, column=0, columnspan=3, sticky="ew")
+
+        ttk.Label(self.gguf_settings_frame, text="n_ctx:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.n_ctx = tk.IntVar(value=4096)
-        ttk.Entry(model_frame, textvariable=self.n_ctx, width=10).grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        ttk.Entry(self.gguf_settings_frame, textvariable=self.n_ctx, width=10).grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
-        ttk.Label(model_frame, text="n_gpu_layers:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        ttk.Label(self.gguf_settings_frame, text="n_gpu_layers:").grid(row=0, column=2, padx=15, pady=5, sticky="w")
         self.n_gpu_layers = tk.IntVar(value=-1)
-        ttk.Entry(model_frame, textvariable=self.n_gpu_layers, width=10).grid(row=2, column=1, padx=5, pady=5, sticky="w")
+        ttk.Entry(self.gguf_settings_frame, textvariable=self.n_gpu_layers, width=10).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
         # --- TTS Synthesis Settings ---
         tts_frame = ttk.LabelFrame(main_frame, text="TTS Synthesis Settings")
@@ -173,10 +183,25 @@ class MainWindow(tk.Tk):
             self.log_message(f"Selected output folder: {path}")
 
     def _select_model(self):
-        path = filedialog.askopenfilename(filetypes=[("GGUF model files", "*.gguf")])
+        model_type = self.model_type.get()
+        if model_type == "gguf":
+            path = filedialog.askopenfilename(filetypes=[("GGUF model files", "*.gguf")])
+        else:
+            path = filedialog.askdirectory(title="Select HuggingFace Model Directory")
         if path:
             self.model_path.set(path)
             self.log_message(f"Selected model: {path}")
+
+    def _on_model_type_change(self, event=None):
+        """Handle model type change - show/hide GGUF settings"""
+        model_type = self.model_type.get()
+        if model_type == "gguf":
+            self.gguf_settings_frame.grid()
+            self.model_path.set("assets/models/maya1.i1-Q5_K_M.gguf")
+        else:  # huggingface
+            self.gguf_settings_frame.grid_remove()
+            self.model_path.set("assets/models/maya1_4bit_safetensor")
+        self.log_message(f"Model type changed to: {model_type}")
 
     def _extract_epub(self):
         epub_path = self.epub_path.get()
@@ -264,7 +289,7 @@ class MainWindow(tk.Tk):
                 epub_text, model_path, self.voice_description.get("1.0", tk.END).strip(),
                 self.chunk_size.get(), self.gap_size.get(), out_wav, out_mp4,
                 cover_path, self.temperature.get(), self.top_p.get(),
-                self.n_ctx.get(), self.n_gpu_layers.get(),
+                self.n_ctx.get(), self.n_gpu_layers.get(), self.model_type.get(),
             ),
             daemon=True
         )
@@ -272,7 +297,10 @@ class MainWindow(tk.Tk):
 
     def _run_pipeline_thread(self, *args):
         try:
-            run_pipeline(*args, progress_cb=self._update_progress, stop_flag=self.stop_generation_flag)
+            # Last arg is model_type, extract it for keyword arg
+            model_type = args[-1]
+            other_args = args[:-1]
+            run_pipeline(*other_args, model_type=model_type, progress_cb=self._update_progress, stop_flag=self.stop_generation_flag)
 
             if self.stop_generation_flag and self.stop_generation_flag.is_set():
                 self.after(0, self._generation_cancelled)

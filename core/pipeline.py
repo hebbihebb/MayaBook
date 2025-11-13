@@ -3,9 +3,11 @@ import queue
 import threading
 import logging
 import sys
+import os
 from datetime import datetime
 from .chunking import chunk_text
 from .tts_maya1_local import synthesize_chunk_local
+from .tts_maya1_hf import synthesize_chunk_hf
 from .audio_combine import concat_wavs
 from .video_export import export_mp4
 
@@ -36,20 +38,26 @@ def run_pipeline(
     n_gpu_layers: int = -1,
     workers: int = 1,
     max_tokens: int = 2500,
+    model_type: str = "gguf",  # "gguf" or "huggingface"
     progress_cb=None,
     stop_flag=None,
 ):
     """
     Runs the full text-to-video pipeline.
+
+    Args:
+        model_type: "gguf" for llama.cpp GGUF models, "huggingface" for HF safetensor models
     """
     logger.info("="*60)
     logger.info("Starting MayaBook pipeline")
+    logger.info(f"Model type: {model_type}")
     logger.info(f"Model path: {model_path}")
     logger.info(f"Voice description: {voice_desc}")
     logger.info(f"Chunk size: {chunk_size}")
     logger.info(f"Temperature: {temperature}, Top-p: {top_p}")
     logger.info(f"Max tokens: {max_tokens}")
-    logger.info(f"Context size: {n_ctx}, GPU layers: {n_gpu_layers}")
+    if model_type == "gguf":
+        logger.info(f"Context size: {n_ctx}, GPU layers: {n_gpu_layers}")
     logger.info(f"Workers: {workers}")
     logger.info("="*60)
 
@@ -91,16 +99,27 @@ def run_pipeline(
                 logger.info(f"Processing chunk {i+1}/{len(chunks)}")
                 logger.debug(f"Chunk {i} text preview: {t[:100]}...")
 
-                wav_path = synthesize_chunk_local(
-                    model_path=model_path,
-                    text=t,
-                    voice_description=voice_desc,
-                    temperature=temperature,
-                    top_p=top_p,
-                    max_tokens=max_tokens,
-                    n_ctx=n_ctx,
-                    n_gpu_layers=n_gpu_layers,
-                )
+                # Use appropriate synthesis function based on model type
+                if model_type == "huggingface":
+                    wav_path = synthesize_chunk_hf(
+                        model_path=model_path,
+                        text=t,
+                        voice_description=voice_desc,
+                        temperature=temperature,
+                        top_p=top_p,
+                        max_tokens=max_tokens,
+                    )
+                else:  # gguf
+                    wav_path = synthesize_chunk_local(
+                        model_path=model_path,
+                        text=t,
+                        voice_description=voice_desc,
+                        temperature=temperature,
+                        top_p=top_p,
+                        max_tokens=max_tokens,
+                        n_ctx=n_ctx,
+                        n_gpu_layers=n_gpu_layers,
+                    )
 
                 logger.info(f"Chunk {i+1} synthesized successfully: {wav_path}")
 

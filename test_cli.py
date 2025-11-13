@@ -12,7 +12,9 @@ def main():
     parser.add_argument('--text', type=str, default="Hello, this is a test of the Maya1 text to speech system.",
                         help='Text to synthesize')
     parser.add_argument('--model', type=str, default='assets/maya1.gguf',
-                        help='Path to Maya1 GGUF model')
+                        help='Path to Maya1 model (GGUF file or HF directory)')
+    parser.add_argument('--model-type', type=str, default='gguf', choices=['gguf', 'huggingface'],
+                        help='Model type: gguf or huggingface')
     parser.add_argument('--voice', type=str, default='Female voice in her 30s, calm and friendly, natural American accent',
                         help='Voice description (natural language)')
     parser.add_argument('--chunk-size', type=int, default=100,
@@ -90,6 +92,7 @@ def main():
             n_ctx=args.ctx,
             n_gpu_layers=args.gpu_layers,
             workers=args.workers,
+            model_type=args.model_type,
             progress_cb=progress_callback,
         )
 
