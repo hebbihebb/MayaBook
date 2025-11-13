@@ -9,3 +9,6 @@ transformers
 bitsandbytes
 accelerate
 platformdirs
+
+# Optional: For advanced audio features (speech rate adjustment)
+# librosa
