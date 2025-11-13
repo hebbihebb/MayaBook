@@ -11,7 +11,12 @@
       "Bash(ffmpeg -version:*)",
       "Bash(findstr:*)",
       "Bash(pip show:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(git checkout:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git log:*)",
+      "Bash(rm:*)"
     ],
     "deny": [],
     "ask": []
