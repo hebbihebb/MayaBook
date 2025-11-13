@@ -5,3 +5,6 @@ snac
 soundfile
 numpy
 torch
+transformers
+bitsandbytes
+accelerate
