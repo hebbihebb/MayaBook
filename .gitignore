@@ -24,3 +24,15 @@ MayaBook_Output/
 # Temp download directories
 temp_download_*/
 
+# Development logs and notes (exclude all .md except README.md)
+DEVLOG*.md
+*_SUMMARY.md
+FIXES*.md
+BUG*.md
+INVESTIGATION*.md
+
+# IDE and editor configs
+.claude/
+.vscode/
+.idea/
+
