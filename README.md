@@ -18,16 +18,16 @@ It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model 
 This project keeps things simple:
 
 * Fully local processing with no external servers
-* No alignment, subtitles, or M4B audio
 * GPU acceleration support via `llama-cpp-python`
 * Minimal Python packages and a single clean GUI
+* Expressive speech synthesis with emotion tag support
 
 ---
 
 ## 🧠 **How It Works**
 
 1. **Extract Text**
-   The app reads an EPUB, cleans it to plain text, and splits it into small chunks (recommended: 80-100 words per chunk for optimal TTS quality).
+   The app reads an EPUB, cleans it to plain text, and splits it into small chunks (recommended: 70-80 words per chunk for optimal TTS quality and to avoid token limit issues).
 
 2. **Generate Audio Locally**
    Each chunk is synthesized using the **Maya1 GGUF model** via `llama-cpp-python`:
@@ -161,10 +161,10 @@ This creates dummy files for initial testing without real assets.
      - `n_gpu_layers`: Number of layers to offload to GPU (default: -1 for all)
    * **Describe the voice** - E.g., "Female voice in her 30s, warm and expressive, natural American accent"
    * **Adjust synthesis parameters:**
-     - Temperature (0.4-0.5 recommended)
-     - Top-p (0.9-0.95 recommended)
-     - Chunk size (80-100 words recommended, or 1000-1500 characters)
-     - Gap between chunks (0.2-0.5 seconds)
+     - Temperature (0.4-0.5 recommended, default: 0.45)
+     - Top-p (0.9-0.95 recommended, default: 0.92)
+     - Chunk size (70-80 words recommended, default: 70)
+     - Gap between chunks (0.2-0.5 seconds, default: 0.25)
    * **Add emotion tags** (optional) - See [EMOTION_TAGS.md](EMOTION_TAGS.md) for supported tags like `<laugh>`, `<cry>`, etc.
    * Click **Extract EPUB** to preview the text
    * Click **Start Generation** to begin synthesis
@@ -221,14 +221,92 @@ project_root/
 
 ---
 
-## ❌ **Out of Scope**
+## ❌ **Current Limitations**
 
 * Multi-voice support (single narrator only)
 * Forced alignment or word-level timings
 * Cloud/API integration (fully local)
 * Subtitle/caption generation
-* M4B audiobook format
-* Chapter-based navigation
+
+---
+
+## 🚀 **Future Enhancements**
+
+The following features are planned for future releases:
+
+### High Priority
+
+1. **M4B/M4A Audiobook Format with Chapters**
+   - Export to proper audiobook formats (M4B/M4A)
+   - Automatically detect and preserve chapter structure from EPUB metadata
+   - Add chapter markers for easy navigation in audiobook players
+   - Support for chapter artwork and metadata embedding
+
+2. **Intelligent GPU Configuration**
+   - Automatic VRAM detection and optimal settings recommendation
+   - Smart `n_gpu_layers` calculation based on available VRAM
+   - Model size analysis (GGUF quantization level, tensor model size)
+   - Real-time VRAM monitoring during synthesis
+   - Warning system for potential OOM errors before generation starts
+
+3. **Smart Default File Selection**
+   - Auto-detect and pre-fill model path if found in `assets/models/`
+   - Auto-detect EPUB files in `assets/test/` or designated input folder
+   - Auto-detect cover images matching EPUB filename
+   - Display default folder locations in GUI with tooltips
+   - "Use Defaults" button to quickly populate all fields
+   - Configurable default paths via settings file
+
+### Medium Priority
+
+4. **Voice Preset Library**
+   - Curated collection of high-quality voice descriptions
+   - Categories: Male/Female, Age ranges, Accents, Styles (narrative, dramatic, conversational)
+   - Dropdown selection with preview examples
+   - User-created preset saving and sharing
+   - Example presets:
+     - "Morgan Freeman-style: Deep male voice, 60s, authoritative yet warm, clear American accent"
+     - "Audiobook narrator: Professional female voice, 40s, clear enunciation, neutral accent"
+     - "Young adult: Energetic female voice, 20s, expressive with natural pauses"
+
+5. **Large EPUB Stress Testing**
+   - Test with full-length novels (100k+ words)
+   - Benchmark synthesis times for various hardware configurations
+   - Memory optimization for long-form content
+   - Resume capability for interrupted synthesis
+   - Chapter-by-chapter processing option for very large files
+
+6. **HuggingFace Tensor Implementation (Linux)**
+   - Complete and test the 4-bit safetensor GPU path on Linux systems
+   - Compare performance with GGUF approach
+   - Unified interface supporting both GGUF and tensor backends
+   - Automatic backend selection based on platform and available libraries
+
+### Low Priority / Nice to Have
+
+7. **Enhanced UI/UX**
+   - Dark mode support
+   - Drag-and-drop file selection
+   - Batch processing for multiple EPUB files
+   - Audio preview before full generation
+   - Visual waveform display of generated audio
+   - Estimated time remaining during synthesis
+
+8. **Quality of Life Improvements**
+   - Configuration profiles (save/load all settings)
+   - Recent files history
+   - Keyboard shortcuts
+   - CLI progress bars with rich formatting
+   - Desktop notifications on completion
+
+9. **Advanced Features**
+   - Custom silence detection between sentences/paragraphs
+   - Variable speech rate control
+   - Pronunciation dictionary for proper nouns
+   - Automatic retry with adjusted parameters on generation failures
+   - Export logs with audio analysis metrics
+
+---
 
 ## 🐛 **Troubleshooting**
 
