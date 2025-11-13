@@ -7,7 +7,7 @@ import tempfile
 import torch
 import soundfile as sf
 import logging
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from snac import SNAC
 from .maya1_constants import (
     SOH_ID, EOH_ID, SOA_ID, TEXT_EOT_ID,
@@ -27,21 +27,47 @@ def _ensure_models(model_path: str):
 
     if _model is None:
         logger.info(f"Loading HuggingFace model from {model_path}...")
-        device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        # Load model with 4-bit quantization
-        _model = AutoModelForCausalLM.from_pretrained(
-            model_path,
-            device_map="auto",
-            torch_dtype=torch.float16,
-            trust_remote_code=True,
-        )
+        if torch.cuda.is_available():
+            logger.info("Loading model on CUDA with bitsandbytes 4-bit quantization")
+
+            # Configure 4-bit quantization for GPU
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+            )
+
+            # Load model with 4-bit quantization on GPU
+            _model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                quantization_config=bnb_config,
+                device_map="auto",
+                trust_remote_code=True,
+            )
+            logger.info("Using bitsandbytes 4-bit GPU kernels")
+            logger.info(f"Model device: {next(_model.parameters()).device}")
+        else:
+            logger.warning("CUDA not available, loading on CPU (this will be slow)")
+            _model = AutoModelForCausalLM.from_pretrained(
+                model_path,
+                device_map="cpu",
+                torch_dtype=torch.float32,
+                trust_remote_code=True,
+            )
+
         _model.eval()
-        logger.info(f"Model loaded on device: {device}")
 
     if _tokenizer is None:
         logger.info("Loading tokenizer...")
         _tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+
+        # Set pad token if not set
+        if _tokenizer.pad_token is None:
+            _tokenizer.pad_token = _tokenizer.eos_token
+            logger.info(f"Set pad_token to eos_token: {_tokenizer.eos_token}")
+
         logger.info("Tokenizer loaded")
 
     if _snac is None:
@@ -132,13 +158,16 @@ def synthesize_chunk_hf(
 
     logger.debug(f"Full prompt: {len(full_tokens)} tokens")
 
-    # Convert to tensor
+    # Convert to tensor and move to model device
     device = next(model.parameters()).device
     input_ids = torch.tensor([full_tokens], dtype=torch.long, device=device)
 
+    # Log generation start with device info
+    logger.info(f"Generation started on GPU device {device}" if device.type == "cuda" else f"Generation started on {device}")
+    logger.debug(f"Input shape: {input_ids.shape}, device: {input_ids.device}")
+
     # Generate
-    logger.debug("Starting generation...")
-    with torch.no_grad():
+    with torch.inference_mode():
         output = model.generate(
             input_ids,
             max_new_tokens=max_tokens,
