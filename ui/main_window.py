@@ -8,8 +8,9 @@ import shutil
 from pathlib import Path
 
 # Assuming these modules exist and are correct
-from core.epub_extract import extract_text
-from core.pipeline import run_pipeline
+from core.epub_extract import extract_text, extract_chapters
+from core.pipeline import run_pipeline, run_pipeline_with_chapters
+from core.m4b_export import verify_ffmpeg_available
 
 # The old preview system used pyttsx3, which is no longer the focus.
 # We'll keep the simpleaudio part for potential playback.
@@ -22,10 +23,12 @@ class MainWindow(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("MayaBook Local GGUF")
-        self.geometry("850x750")
+        self.geometry("850x900")  # Increased height for new sections
 
         self.stop_generation_flag = None
         self.generation_thread = None
+        self.chapters_data = None  # Store extracted chapters
+        self.extracted_metadata = None  # Store extracted metadata
 
         self._create_widgets()
         self._create_action_buttons()
@@ -33,6 +36,9 @@ class MainWindow(tk.Tk):
         # Add a logger text box
         self._create_log_widget()
         self.log_message("Welcome to MayaBook!")
+
+        # Check FFmpeg availability on startup
+        self._check_ffmpeg()
 
     def _create_widgets(self):
         main_frame = ttk.Frame(self, padding="10")
@@ -115,10 +121,84 @@ class MainWindow(tk.Tk):
         self.gap_size = tk.DoubleVar(value=0.25)
         ttk.Entry(tts_frame, textvariable=self.gap_size, width=10).grid(row=4, column=1, padx=5, pady=5, sticky="w")
 
+        # --- Output Format ---
+        format_frame = ttk.LabelFrame(main_frame, text="Output Format")
+        format_frame.grid(row=3, column=0, padx=5, pady=5, sticky="ew")
+        format_frame.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(format_frame, text="Format:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.output_format = tk.StringVar(value="m4b")
+        self.format_combo = ttk.Combobox(format_frame, textvariable=self.output_format,
+                                         values=["m4b", "wav", "mp4"], state="readonly", width=15)
+        self.format_combo.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+        format_help = ttk.Label(format_frame, text="M4B: Audiobook with chapters | WAV: Lossless audio | MP4: Video with cover",
+                               foreground="gray")
+        format_help.grid(row=1, column=0, columnspan=3, padx=5, pady=(0, 5), sticky="w")
+
+        # --- Chapter Options ---
+        self.chapter_frame = ttk.LabelFrame(main_frame, text="Chapter Options")
+        self.chapter_frame.grid(row=4, column=0, padx=5, pady=5, sticky="ew")
+        self.chapter_frame.grid_columnconfigure(1, weight=1)
+
+        self.use_chapters = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self.chapter_frame, text="Enable chapter-aware processing",
+                       variable=self.use_chapters, command=self._toggle_chapter_options).grid(
+                           row=0, column=0, columnspan=2, padx=5, pady=5, sticky="w")
+
+        self.save_separately = tk.BooleanVar(value=False)
+        self.save_sep_check = ttk.Checkbutton(self.chapter_frame, text="Save chapters separately",
+                                             variable=self.save_separately)
+        self.save_sep_check.grid(row=1, column=0, columnspan=2, padx=25, pady=2, sticky="w")
+
+        self.merge_chapters = tk.BooleanVar(value=True)
+        self.merge_check = ttk.Checkbutton(self.chapter_frame, text="Create merged file",
+                                          variable=self.merge_chapters)
+        self.merge_check.grid(row=2, column=0, columnspan=2, padx=25, pady=2, sticky="w")
+
+        ttk.Label(self.chapter_frame, text="Chapter silence (seconds):").grid(row=3, column=0, padx=25, pady=5, sticky="w")
+        self.chapter_silence = tk.DoubleVar(value=2.0)
+        silence_spin = ttk.Spinbox(self.chapter_frame, from_=0.5, to=5.0, increment=0.5,
+                                   textvariable=self.chapter_silence, width=8)
+        silence_spin.grid(row=3, column=1, padx=5, pady=5, sticky="w")
+
+        # --- Metadata ---
+        self.metadata_frame = ttk.LabelFrame(main_frame, text="Metadata (Optional)")
+        self.metadata_frame.grid(row=5, column=0, padx=5, pady=5, sticky="ew")
+        self.metadata_frame.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(self.metadata_frame, text="Title:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.metadata_title = tk.StringVar()
+        ttk.Entry(self.metadata_frame, textvariable=self.metadata_title, width=50).grid(
+            row=0, column=1, padx=5, pady=5, sticky="ew")
+
+        ttk.Label(self.metadata_frame, text="Author:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        self.metadata_author = tk.StringVar()
+        ttk.Entry(self.metadata_frame, textvariable=self.metadata_author, width=50).grid(
+            row=1, column=1, padx=5, pady=5, sticky="ew")
+
+        ttk.Label(self.metadata_frame, text="Album/Series:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        self.metadata_album = tk.StringVar()
+        ttk.Entry(self.metadata_frame, textvariable=self.metadata_album, width=50).grid(
+            row=2, column=1, padx=5, pady=5, sticky="ew")
+
+        ttk.Label(self.metadata_frame, text="Year:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+        self.metadata_year = tk.StringVar()
+        ttk.Entry(self.metadata_frame, textvariable=self.metadata_year, width=15).grid(
+            row=3, column=1, padx=5, pady=5, sticky="w")
+
+        ttk.Label(self.metadata_frame, text="Genre:").grid(row=4, column=0, padx=5, pady=5, sticky="w")
+        self.metadata_genre = tk.StringVar(value="Audiobook")
+        ttk.Entry(self.metadata_frame, textvariable=self.metadata_genre, width=30).grid(
+            row=4, column=1, padx=5, pady=5, sticky="w")
+
+        self.metadata_status_label = ttk.Label(self.metadata_frame, text="", foreground="gray")
+        self.metadata_status_label.grid(row=5, column=0, columnspan=2, padx=5, pady=(0, 5), sticky="w")
+
         # --- EPUB Preview ---
         preview_frame = ttk.LabelFrame(main_frame, text="EPUB Text Preview")
-        preview_frame.grid(row=4, column=0, padx=5, pady=5, sticky="nsew")
-        main_frame.grid_rowconfigure(4, weight=1)
+        preview_frame.grid(row=6, column=0, padx=5, pady=5, sticky="nsew")
+        main_frame.grid_rowconfigure(6, weight=1)
 
         self.text_preview = tk.Text(preview_frame, wrap=tk.WORD, height=10)
         self.text_preview_scrollbar = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=self.text_preview.yview)
@@ -210,30 +290,72 @@ class MainWindow(tk.Tk):
             return
 
         try:
-            self.log_message(f"Extracting text from {os.path.basename(epub_path)}...")
-            extracted_text = extract_text(epub_path)
+            self.log_message(f"Extracting chapters and metadata from {os.path.basename(epub_path)}...")
+
+            # Use extract_chapters to get structured data
+            metadata, chapters = extract_chapters(epub_path)
+
+            # Store the chapters for later use
+            self.chapters_data = chapters
+            self.extracted_metadata = metadata
+
+            # Populate metadata fields in GUI
+            if metadata.get('title'):
+                self.metadata_title.set(metadata['title'])
+            if metadata.get('author'):
+                self.metadata_author.set(metadata['author'])
+            if metadata.get('year'):
+                self.metadata_year.set(metadata['year'])
+            if metadata.get('genre'):
+                self.metadata_genre.set(metadata['genre'])
+
+            # Show metadata status
+            detected_fields = [k for k in ['title', 'author', 'year', 'genre'] if metadata.get(k)]
+            if detected_fields:
+                self.metadata_status_label.config(
+                    text=f"Auto-detected: {', '.join(detected_fields)}"
+                )
+
+            # Display chapter preview in text area
             self.text_preview.delete("1.0", tk.END)
-            self.text_preview.insert(tk.END, extracted_text)
-            self.log_message("EPUB text extracted successfully.")
+
+            if chapters:
+                preview_text = f"Found {len(chapters)} chapter(s):\n\n"
+                for i, (title, text) in enumerate(chapters, 1):
+                    word_count = len(text.split())
+                    preview_text += f"{i}. {title} ({word_count} words)\n"
+
+                preview_text += "\n" + "=" * 60 + "\n\n"
+
+                # Also show full text (first 1000 chars of each chapter)
+                for title, text in chapters:
+                    preview_text += f"=== {title} ===\n\n"
+                    preview_text += text[:1000]
+                    if len(text) > 1000:
+                        preview_text += "...\n\n"
+                    else:
+                        preview_text += "\n\n"
+
+                self.text_preview.insert(tk.END, preview_text)
+                self.log_message(f"EPUB extracted: {len(chapters)} chapters, {sum(len(t.split()) for _, t in chapters)} total words")
+            else:
+                self.text_preview.insert(tk.END, "Error: No chapters extracted from EPUB.")
+                self.log_message("Warning: No chapters found in EPUB.")
+
         except Exception as e:
             self.log_message(f"Error extracting EPUB: {e}")
             messagebox.showerror("EPUB Error", f"Failed to extract text from EPUB:\n{e}")
 
     def _start_generation(self):
         # --- Validate inputs ---
-        epub_text = self.text_preview.get("1.0", tk.END).strip()
-        if not epub_text:
-            messagebox.showerror("Error", "EPUB text is empty. Please extract an EPUB first.")
-            return
-
         model_path = self.model_path.get()
         if not model_path:
-            messagebox.showerror("Error", "Please select a GGUF model file.")
+            messagebox.showerror("Error", "Please select a model file.")
             return
 
         if not os.path.exists(model_path):
             messagebox.showerror("Model Not Found",
-                f"GGUF model file not found:\n{model_path}\n\n"
+                f"Model file not found:\n{model_path}\n\n"
                 "Please download maya1.i1-Q5_K_M.gguf from:\n"
                 "https://huggingface.co/maya-research/maya1\n\n"
                 "Or run: python create_placeholders.py")
@@ -250,19 +372,23 @@ class MainWindow(tk.Tk):
                 return
 
         cover_path = self.cover_path.get()
-        if not cover_path or not os.path.exists(cover_path):
-            messagebox.showerror("Error", "Please select a valid cover image.")
-            return
 
         # Check for FFmpeg
-        if not shutil.which("ffmpeg"):
+        output_format = self.output_format.get()
+        if output_format in ["m4b", "mp4"] and not shutil.which("ffmpeg"):
             messagebox.showerror("FFmpeg Not Found",
-                "FFmpeg is required for MP4 export but was not found in PATH.\n\n"
+                f"FFmpeg is required for {output_format.upper()} export but was not found in PATH.\n\n"
                 "Please install FFmpeg:\n"
                 "- Windows: Download from ffmpeg.org and add to PATH\n"
                 "- macOS: brew install ffmpeg\n"
                 "- Linux: sudo apt install ffmpeg")
             return
+
+        # For MP4 output, cover is required
+        if output_format == "mp4":
+            if not cover_path or not os.path.exists(cover_path):
+                messagebox.showerror("Error", "Please select a valid cover image for MP4 output.")
+                return
 
         output_dir = self.output_folder.get()
         if not output_dir:
@@ -270,30 +396,124 @@ class MainWindow(tk.Tk):
             return
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-        # --- Prepare for pipeline ---
-        self.log_message("Starting generation...")
-        self.progress['value'] = 0
-        self.generate_button.config(state=tk.DISABLED)
-        self.cancel_button.config(state=tk.NORMAL)
+        # Check if chapter-aware processing is enabled
+        use_chapters = self.use_chapters.get()
 
-        self.stop_generation_flag = threading.Event()
+        if use_chapters:
+            # Validate chapter data
+            if not self.chapters_data:
+                messagebox.showerror("Error", "Please extract EPUB first to use chapter-aware processing.")
+                return
 
-        base_name = Path(self.epub_path.get()).stem
-        out_wav = str(Path(output_dir) / f"{base_name}.wav")
-        out_mp4 = str(Path(output_dir) / f"{base_name}.mp4")
+            # --- Prepare for chapter-aware pipeline ---
+            self.log_message("Starting chapter-aware generation...")
+            self.progress['value'] = 0
+            self.generate_button.config(state=tk.DISABLED)
+            self.cancel_button.config(state=tk.NORMAL)
 
-        # --- Run pipeline in a thread ---
-        self.generation_thread = threading.Thread(
-            target=self._run_pipeline_thread,
-            args=(
-                epub_text, model_path, self.voice_description.get("1.0", tk.END).strip(),
-                self.chunk_size.get(), self.gap_size.get(), out_wav, out_mp4,
-                cover_path, self.temperature.get(), self.top_p.get(),
-                self.n_ctx.get(), self.n_gpu_layers.get(), self.model_type.get(),
-            ),
-            daemon=True
-        )
-        self.generation_thread.start()
+            self.stop_generation_flag = threading.Event()
+
+            base_name = Path(self.epub_path.get()).stem
+            output_base = str(Path(output_dir) / base_name)  # No extension
+
+            # Prepare metadata
+            metadata = {
+                'title': self.metadata_title.get() or base_name,
+                'author': self.metadata_author.get() or 'Unknown',
+                'album': self.metadata_album.get() or self.metadata_title.get() or base_name,
+                'year': self.metadata_year.get(),
+                'genre': self.metadata_genre.get() or 'Audiobook',
+            }
+
+            # Run chapter-aware pipeline in thread
+            self.generation_thread = threading.Thread(
+                target=self._run_chapter_pipeline_thread,
+                args=(
+                    self.chapters_data, metadata, model_path,
+                    self.voice_description.get("1.0", tk.END).strip(),
+                    self.chunk_size.get(), self.gap_size.get(),
+                    output_base, cover_path, output_format,
+                    self.save_separately.get(), self.merge_chapters.get(),
+                    self.chapter_silence.get(), self.temperature.get(),
+                    self.top_p.get(), self.n_ctx.get(),
+                    self.n_gpu_layers.get(), self.model_type.get(),
+                ),
+                daemon=True
+            )
+            self.generation_thread.start()
+
+        else:
+            # Legacy mode - validate text
+            epub_text = self.text_preview.get("1.0", tk.END).strip()
+            if not epub_text:
+                messagebox.showerror("Error", "EPUB text is empty. Please extract an EPUB first.")
+                return
+
+            if not cover_path or not os.path.exists(cover_path):
+                messagebox.showerror("Error", "Please select a valid cover image for legacy MP4 mode.")
+                return
+
+            # --- Prepare for legacy pipeline ---
+            self.log_message("Starting generation (legacy mode)...")
+            self.progress['value'] = 0
+            self.generate_button.config(state=tk.DISABLED)
+            self.cancel_button.config(state=tk.NORMAL)
+
+            self.stop_generation_flag = threading.Event()
+
+            base_name = Path(self.epub_path.get()).stem
+            out_wav = str(Path(output_dir) / f"{base_name}.wav")
+            out_mp4 = str(Path(output_dir) / f"{base_name}.mp4")
+
+            # --- Run legacy pipeline in a thread ---
+            self.generation_thread = threading.Thread(
+                target=self._run_pipeline_thread,
+                args=(
+                    epub_text, model_path, self.voice_description.get("1.0", tk.END).strip(),
+                    self.chunk_size.get(), self.gap_size.get(), out_wav, out_mp4,
+                    cover_path, self.temperature.get(), self.top_p.get(),
+                    self.n_ctx.get(), self.n_gpu_layers.get(), self.model_type.get(),
+                ),
+                daemon=True
+            )
+            self.generation_thread.start()
+
+    def _run_chapter_pipeline_thread(self, chapters, metadata, model_path, voice_desc,
+                                    chunk_size, gap_s, output_base, cover_path, output_format,
+                                    save_separately, merge_chapters, chapter_silence,
+                                    temperature, top_p, n_ctx, n_gpu_layers, model_type):
+        """Thread for running chapter-aware pipeline."""
+        try:
+            result = run_pipeline_with_chapters(
+                chapters=chapters,
+                metadata=metadata,
+                model_path=model_path,
+                voice_desc=voice_desc,
+                chunk_size=chunk_size,
+                gap_s=gap_s,
+                output_base_path=output_base,
+                cover_image=cover_path,
+                output_format=output_format,
+                save_chapters_separately=save_separately,
+                merge_chapters=merge_chapters,
+                chapter_silence=chapter_silence,
+                temperature=temperature,
+                top_p=top_p,
+                n_ctx=n_ctx,
+                n_gpu_layers=n_gpu_layers,
+                workers=1,
+                max_tokens=2500,
+                model_type=model_type,
+                progress_cb=self._update_progress,
+                stop_flag=self.stop_generation_flag,
+            )
+
+            if self.stop_generation_flag and self.stop_generation_flag.is_set():
+                self.after(0, self._generation_cancelled)
+            else:
+                self.after(0, self._generation_complete, result)
+        except Exception as e:
+            self.after(0, self._generation_failed, e)
 
     def _run_pipeline_thread(self, *args):
         try:
@@ -309,14 +529,35 @@ class MainWindow(tk.Tk):
         except Exception as e:
             self.after(0, self._generation_failed, e)
 
-    def _update_progress(self, current, total):
+    def _update_progress(self, current, total, chapter_info=None):
+        """Update progress bar and log message."""
         self.progress['maximum'] = total
         self.progress['value'] = current
-        self.log_message(f"Synthesized chunk {current} of {total}...")
 
-    def _generation_complete(self):
+        if chapter_info:
+            self.log_message(f"{chapter_info}: Chunk {current}/{total}")
+        else:
+            self.log_message(f"Synthesized chunk {current} of {total}...")
+
+    def _generation_complete(self, result=None):
+        """Handle successful generation completion."""
         self.log_message("Generation completed successfully!")
-        messagebox.showinfo("Success", "MP4 generation complete.")
+
+        if result and isinstance(result, dict):
+            # Chapter-aware pipeline result
+            if result.get('merged_path'):
+                self.log_message(f"✓ Merged file: {result['merged_path']}")
+            if result.get('chapter_paths'):
+                self.log_message(f"✓ Created {len(result['chapter_paths'])} separate chapter files")
+
+            messagebox.showinfo("Success",
+                f"Audiobook generation complete!\n\n"
+                f"Format: {self.output_format.get().upper()}\n"
+                f"Chapters: {len(result.get('chapter_times', []))}")
+        else:
+            # Legacy pipeline result
+            messagebox.showinfo("Success", "MP4 generation complete.")
+
         self._reset_ui_state()
 
     def _generation_failed(self, error):
@@ -342,6 +583,32 @@ class MainWindow(tk.Tk):
         self.progress['value'] = 0
         self.generation_thread = None
         self.stop_generation_flag = None
+
+    def _check_ffmpeg(self):
+        """Check FFmpeg availability on startup."""
+        is_available, message = verify_ffmpeg_available()
+        if not is_available:
+            self.log_message(f"⚠️ {message}")
+            self.log_message("M4B format requires FFmpeg. Please install FFmpeg to use M4B export.")
+            # Disable M4B option if FFmpeg not available
+            self.format_combo.config(values=["wav", "mp4"])
+            if self.output_format.get() == "m4b":
+                self.output_format.set("wav")
+        else:
+            self.log_message(f"✓ {message}")
+
+    def _toggle_chapter_options(self):
+        """Enable/disable chapter options based on checkbox state."""
+        enabled = self.use_chapters.get()
+        state = tk.NORMAL if enabled else tk.DISABLED
+
+        self.save_sep_check.config(state=state)
+        self.merge_check.config(state=state)
+
+        # Also toggle metadata fields
+        for widget in self.metadata_frame.winfo_children():
+            if isinstance(widget, ttk.Entry) or isinstance(widget, ttk.Spinbox):
+                widget.config(state=state)
 
     def _open_folder(self, path):
         if not path or not os.path.isdir(path):

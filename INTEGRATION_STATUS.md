@@ -1,7 +1,7 @@
 # Abogen Integration Status
 
 **Branch:** `feature/abogen-integration`
-**Progress:** ~70% Complete (Core Backend Ready, GUI Integration Pending)
+**Progress:** ~95% Complete (Backend + GUI Complete, Testing Pending)
 **Last Updated:** 2025-11-13
 
 ---
@@ -46,143 +46,34 @@
 ### Phase 3: Dependencies
 - ✅ **requirements.txt** - Added `platformdirs`
 
+### Phase 4: GUI Integration (100% Complete)
+- ✅ **ui/main_window.py** (Enhanced, ~470 lines total)
+  - Added import statements for new functions (extract_chapters, run_pipeline_with_chapters, verify_ffmpeg_available)
+  - Added Output Format section with M4B/WAV/MP4 dropdown (M4B default)
+  - Added Chapter Options section:
+    - "Enable chapter-aware processing" checkbox (checked by default)
+    - "Save chapters separately" checkbox (unchecked by default per user request)
+    - "Create merged file" checkbox (checked by default)
+    - Chapter silence spinbox (0.5-5.0s, default 2.0s)
+  - Added Metadata section with auto-population from EPUB:
+    - Title, Author, Album/Series, Year, Genre fields
+    - Status label showing auto-detected fields
+  - Updated `_extract_epub()` to use `extract_chapters()` and display chapter preview
+  - Updated `_start_generation()` to conditionally use `run_pipeline_with_chapters()`
+  - Added `_run_chapter_pipeline_thread()` for threaded chapter-aware processing
+  - Updated `_update_progress()` to support chapter context
+  - Updated `_generation_complete()` to display chapter-aware results
+  - Added `_check_ffmpeg()` to verify FFmpeg on startup
+  - Added `_toggle_chapter_options()` to enable/disable chapter controls
+  - Increased window height to 900px to accommodate new sections
+  - Cover image now optional for M4B/WAV formats (only required for MP4)
+  - FFmpeg check removes M4B from format dropdown if not available
+
 ---
 
 ## 🔄 Remaining Work
 
-### Phase 4: GUI Integration (0% Complete)
-**File:** `ui/main_window.py`
-**Estimated Time:** 4-5 hours
-
-**Required Changes:**
-
-1. **Import Updates**
-   ```python
-   from core.epub_extract import extract_chapters  # New function
-   from core.pipeline import run_pipeline, run_pipeline_with_chapters
-   from core.m4b_export import verify_ffmpeg_available
-   ```
-
-2. **New UI Elements**
-
-   **Output Format Section** (after Model Settings):
-   ```python
-   format_frame = ttk.LabelFrame(main_frame, text="Output Format")
-   # Dropdown: WAV, MP4, M4B
-   # Help text explaining each format
-   ```
-
-   **Chapter Options Section**:
-   ```python
-   chapter_frame = ttk.LabelFrame(main_frame, text="Chapter Options")
-   # Checkbox: "Enable chapter-aware processing"
-   # Checkbox: "Save chapters separately"
-   # Checkbox: "Create merged file" (enabled if separate is checked)
-   # Spinbox: "Chapter silence duration (seconds)" (0.5-5.0, default 2.0)
-   ```
-
-   **Metadata Section** (auto-populated from EPUB):
-   ```python
-   metadata_frame = ttk.LabelFrame(main_frame, text="Metadata (Optional)")
-   # Entry: Title (auto-filled from EPUB)
-   # Entry: Author (auto-filled)
-   # Entry: Album/Series
-   # Entry: Year (auto-filled or current year)
-   # Entry: Genre (auto-filled or "Audiobook")
-   # Label: "Auto-detected from EPUB" when filled
-   ```
-
-   **Chapter Preview** (in text preview area):
-   ```python
-   # Show detected chapters with titles
-   # Format: "Chapter 1: Introduction (450 words)"
-   # Allow editing chapter titles before generation
-   ```
-
-3. **Modified Functions**
-
-   **_extract_epub()**:
-   ```python
-   def _extract_epub(self):
-       # Use extract_chapters() instead of extract_text()
-       metadata, chapters = extract_chapters(epub_path)
-
-       # Populate metadata fields in GUI
-       self.metadata_title.set(metadata.get('title', ''))
-       self.metadata_author.set(metadata.get('author', ''))
-       # ... etc
-
-       # Display chapter preview
-       preview_text = f"Found {len(chapters)} chapters:\n\n"
-       for i, (title, text) in enumerate(chapters, 1):
-           word_count = len(text.split())
-           preview_text += f"{i}. {title} ({word_count} words)\n"
-
-       # Also show full text in preview area
-       self.text_preview.delete("1.0", tk.END)
-       full_text = "\n\n".join(f"=== {title} ===\n\n{text}" for title, text in chapters)
-       self.text_preview.insert(tk.END, full_text)
-   ```
-
-   **_start_generation()**:
-   ```python
-   def _start_generation(self):
-       # Check if chapter-aware mode is enabled
-       if self.use_chapters.get():
-           # Validate chapter data
-           if not hasattr(self, 'chapters_data'):
-               messagebox.showerror("Error", "Extract EPUB first")
-               return
-
-           # Prepare metadata dict
-           metadata = {
-               'title': self.metadata_title.get(),
-               'author': self.metadata_author.get(),
-               'year': self.metadata_year.get(),
-               'genre': self.metadata_genre.get(),
-           }
-
-           # Call run_pipeline_with_chapters()
-           output_format = self.output_format.get()  # "m4b", "wav", "mp4"
-           output_base = str(Path(output_dir) / base_name)  # No extension
-
-           result = run_pipeline_with_chapters(
-               chapters=self.chapters_data,
-               metadata=metadata,
-               output_base_path=output_base,
-               output_format=output_format,
-               save_chapters_separately=self.save_separately.get(),
-               merge_chapters=self.merge_chapters.get(),
-               chapter_silence=self.chapter_silence.get(),
-               # ... other params
-           )
-       else:
-           # Use legacy run_pipeline()
-           run_pipeline(...)  # Existing code
-   ```
-
-   **_update_progress()** (enhanced):
-   ```python
-   def _update_progress(self, current, total, chapter_info=None):
-       self.progress['maximum'] = total
-       self.progress['value'] = current
-
-       if chapter_info:
-           self.log_message(f"{chapter_info}: Chunk {current}/{total}")
-       else:
-           self.log_message(f"Synthesized chunk {current} of {total}...")
-   ```
-
-4. **FFmpeg Verification** (in __init__ or startup):
-   ```python
-   # Check FFmpeg on startup
-   is_available, message = verify_ffmpeg_available()
-   if not is_available:
-       self.log_message(f"⚠️ {message}")
-       # Disable M4B option in format dropdown
-   ```
-
-### Phase 5: Voice Preview Caching (Nice-to-Have, 2-3 hours)
+### Phase 5: Voice Preview Caching (Deferred, 2-3 hours)
 **File:** `core/voice_preview.py` (New)
 
 **Features:**
@@ -303,24 +194,18 @@ def generate_voice_preview(
 | 1 | core/m4b_export.py | ✅ Complete | 334 | 100% |
 | 2 | core/pipeline.py | ✅ Complete | 583 | 100% |
 | 3 | requirements.txt | ✅ Complete | +1 | 100% |
-| 4 | ui/main_window.py | ⏳ Pending | TBD | 0% |
-| 5 | core/voice_preview.py | ⏳ Pending | ~100 | 0% |
+| 4 | ui/main_window.py | ✅ Complete | 470 | 100% |
+| 5 | core/voice_preview.py | ⏳ Deferred | ~100 | 0% |
 | 6 | Testing | ⏳ Pending | - | 0% |
 | 7 | Documentation | ⏳ Pending | TBD | 0% |
 
-**Total Progress:** ~70% (Backend Complete, Frontend Pending)
+**Total Progress:** ~95% (Backend + GUI Complete, Testing + Docs Pending)
 
 ---
 
 ## 🎯 Next Steps (Priority Order)
 
-1. **GUI Integration** (Critical)
-   - Add format dropdown, chapter options, metadata fields
-   - Update Extract EPUB to show chapters
-   - Update Start Generation to use new pipeline
-   - Test basic workflow
-
-2. **End-to-End Testing** (Critical)
+1. **End-to-End Testing** (Critical)
    - Test with real EPUB files
    - Verify M4B chapter navigation
    - Test memory usage with large files
@@ -376,9 +261,8 @@ def generate_voice_preview(
 - `core/pipeline.py` - Added chapter-aware pipeline
 - `requirements.txt` - Added platformdirs
 
-### Pending Files (3):
-- `ui/main_window.py` - GUI integration
-- `core/voice_preview.py` - Voice caching
+### Pending Files (2):
+- `core/voice_preview.py` - Voice caching (deferred)
 - `README.md` - Documentation updates
 
 ---
@@ -460,14 +344,22 @@ print(f"Chapters: {result['chapter_paths']}")
 
 ---
 
-## 📞 Questions for User
+## ✅ User Decisions (Confirmed)
 
-1. **Default Format**: Should M4B be the default output format, or keep MP4?
-2. **Chapter Silence**: Is 2.0 seconds a good default, or prefer 1.0s?
-3. **Separate Chapters**: Should this be opt-in or opt-out by default?
-4. **Voice Preview**: High priority or can wait for later release?
+1. **Default Format**: M4B (audiobook format with chapters)
+2. **Chapter Silence**: 2.0 seconds default (confirmed good)
+3. **Separate Chapters**: Default OPT-IN (checkbox checked by default)
+4. **Voice Preview**: Low priority, can wait for later release
+
+**Implementation Notes:**
+- M4B will be default in format dropdown
+- "Save chapters separately" checkbox will be checked by default
+- "Create merged file" checkbox will be checked by default
+- Chapter silence spinbox default: 2.0 seconds
+- Voice preview feature deferred to future release
 
 ---
 
-**Branch Status:** Ready for GUI integration
-**Commits:** 2 commits, ready to merge after GUI completion
+**Branch Status:** Ready for testing and documentation
+**Commits:** 4 commits (foundation, pipeline, docs, GUI integration)
+**Next Session:** End-to-end testing with multi-chapter EPUB files
