@@ -41,10 +41,41 @@ class MainWindow(tk.Tk):
         self._check_ffmpeg()
 
     def _create_widgets(self):
-        main_frame = ttk.Frame(self, padding="10")
-        main_frame.grid(row=0, column=0, sticky="nsew")
+        # Create canvas with scrollbar for main content
+        canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
+
+        main_frame = ttk.Frame(canvas, padding="10")
+
+        # Configure canvas
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        # Grid layout
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
+
+        # Create window in canvas
+        canvas_frame = canvas.create_window((0, 0), window=main_frame, anchor="nw")
+
+        # Configure scrolling
+        def on_frame_configure(event=None):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def on_canvas_configure(event):
+            # Update the window width to match canvas width
+            canvas.itemconfig(canvas_frame, width=event.width)
+
+        main_frame.bind("<Configure>", on_frame_configure)
+        canvas.bind("<Configure>", on_canvas_configure)
+
+        # Enable mousewheel scrolling
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
 
         # --- File Paths ---
         file_frame = ttk.LabelFrame(main_frame, text="I/O Paths")
