@@ -9,7 +9,9 @@
       "Bash(python test_cli.py:*)",
       "Bash(dir:*)",
       "Bash(ffmpeg -version:*)",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(pip show:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []
