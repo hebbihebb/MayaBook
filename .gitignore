@@ -24,13 +24,12 @@ MayaBook_Output/
 # Temp download directories
 temp_download_*/
 
-# Development logs and notes (exclude all .md except README.md and EMOTION_TAGS.md)
+# Development logs and notes (exclude all .md except README.md, EMOTION_TAGS.md, and CLAUDE.md)
 DEVLOG*.md
 *_SUMMARY.md
 FIXES*.md
 BUG*.md
 INVESTIGATION*.md
-CLAUDE.md
 tensor.md
 TROUBLESHOOTING*.md
 
