@@ -11,6 +11,8 @@ from pathlib import Path
 from core.epub_extract import extract_text, extract_chapters
 from core.pipeline import run_pipeline, run_pipeline_with_chapters
 from core.m4b_export import verify_ffmpeg_available
+from core.voice_presets import get_preset_names, get_preset_by_name
+from core.voice_preview import generate_voice_preview, is_preview_cached, get_cached_preview_path
 
 # The old preview system used pyttsx3, which is no longer the focus.
 # We'll keep the simpleaudio part for potential playback.
@@ -131,26 +133,45 @@ class MainWindow(tk.Tk):
         tts_frame.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
         tts_frame.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(tts_frame, text="Voice Description:").grid(row=0, column=0, padx=5, pady=5, sticky="nw")
+        # Voice Preset Selection
+        ttk.Label(tts_frame, text="Voice Preset:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.voice_preset = tk.StringVar(value="Professional Female Narrator")
+        voice_preset_combo = ttk.Combobox(tts_frame, textvariable=self.voice_preset,
+                                         values=get_preset_names(), state="readonly", width=40)
+        voice_preset_combo.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        voice_preset_combo.bind("<<ComboboxSelected>>", self._on_voice_preset_change)
+
+        # Preview Voice button
+        self.preview_button = ttk.Button(tts_frame, text="Preview Voice", command=self._preview_voice)
+        self.preview_button.grid(row=0, column=2, padx=5, pady=5)
+
+        # Custom voice description
+        ttk.Label(tts_frame, text="Voice Description:").grid(row=1, column=0, padx=5, pady=5, sticky="nw")
         self.voice_description = tk.Text(tts_frame, height=3, width=60)
-        self.voice_description.grid(row=0, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
-        self.voice_description.insert(tk.END, "A female speaker with a warm, calm, and clear voice, delivering the narration in a standard American English accent. Her tone is engaging and pleasant, suitable for long listening sessions.")
+        self.voice_description.grid(row=1, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
 
-        ttk.Label(tts_frame, text="Temperature:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
+        # Set default voice description from preset
+        default_preset = get_preset_by_name("Professional Female Narrator")
+        if default_preset:
+            self.voice_description.insert(tk.END, default_preset["description"])
+        else:
+            self.voice_description.insert(tk.END, "A female speaker with a warm, calm, and clear voice, delivering the narration in a standard American English accent. Her tone is engaging and pleasant, suitable for long listening sessions.")
+
+        ttk.Label(tts_frame, text="Temperature:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
         self.temperature = tk.DoubleVar(value=0.45)
-        ttk.Entry(tts_frame, textvariable=self.temperature, width=10).grid(row=1, column=1, padx=5, pady=5, sticky="w")
+        ttk.Entry(tts_frame, textvariable=self.temperature, width=10).grid(row=2, column=1, padx=5, pady=5, sticky="w")
 
-        ttk.Label(tts_frame, text="Top-p:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
+        ttk.Label(tts_frame, text="Top-p:").grid(row=3, column=0, padx=5, pady=5, sticky="w")
         self.top_p = tk.DoubleVar(value=0.92)
-        ttk.Entry(tts_frame, textvariable=self.top_p, width=10).grid(row=2, column=1, padx=5, pady=5, sticky="w")
+        ttk.Entry(tts_frame, textvariable=self.top_p, width=10).grid(row=3, column=1, padx=5, pady=5, sticky="w")
 
-        ttk.Label(tts_frame, text="Chunk Size (words):").grid(row=3, column=0, padx=5, pady=5, sticky="w")
+        ttk.Label(tts_frame, text="Chunk Size (words):").grid(row=4, column=0, padx=5, pady=5, sticky="w")
         self.chunk_size = tk.IntVar(value=70)
-        ttk.Entry(tts_frame, textvariable=self.chunk_size, width=10).grid(row=3, column=1, padx=5, pady=5, sticky="w")
+        ttk.Entry(tts_frame, textvariable=self.chunk_size, width=10).grid(row=4, column=1, padx=5, pady=5, sticky="w")
 
-        ttk.Label(tts_frame, text="Gap (seconds):").grid(row=4, column=0, padx=5, pady=5, sticky="w")
+        ttk.Label(tts_frame, text="Gap (seconds):").grid(row=5, column=0, padx=5, pady=5, sticky="w")
         self.gap_size = tk.DoubleVar(value=0.25)
-        ttk.Entry(tts_frame, textvariable=self.gap_size, width=10).grid(row=4, column=1, padx=5, pady=5, sticky="w")
+        ttk.Entry(tts_frame, textvariable=self.gap_size, width=10).grid(row=5, column=1, padx=5, pady=5, sticky="w")
 
         # --- Output Format ---
         format_frame = ttk.LabelFrame(main_frame, text="Output Format")
@@ -654,6 +675,127 @@ class MainWindow(tk.Tk):
                 subprocess.run(["xdg-open", path])
         except OSError as e:
             messagebox.showerror("Error", f"Failed to open folder:\n{e}")
+
+    def _on_voice_preset_change(self, event=None):
+        """Handle voice preset selection - update voice description text."""
+        preset_name = self.voice_preset.get()
+        preset = get_preset_by_name(preset_name)
+
+        if preset:
+            # Update the voice description text box
+            self.voice_description.delete("1.0", tk.END)
+            self.voice_description.insert(tk.END, preset["description"])
+            self.log_message(f"Voice preset changed to: {preset_name}")
+
+            # Show preset details
+            details = f"{preset.get('age', 'N/A')}, {preset.get('accent', 'N/A')}"
+            self.log_message(f"  Details: {details}")
+        else:
+            self.log_message(f"Warning: Preset '{preset_name}' not found")
+
+    def _preview_voice(self):
+        """Generate and play a voice preview sample."""
+        model_path = self.model_path.get()
+        if not model_path or not os.path.exists(model_path):
+            messagebox.showerror("Error", "Please select a valid model file first.")
+            return
+
+        # Check if model is too small (placeholder)
+        model_size = os.path.getsize(model_path)
+        if model_size < 1_000_000:
+            messagebox.showerror("Error",
+                f"Model file appears to be a placeholder ({model_size:,} bytes).\n"
+                "Please download the full model file first.")
+            return
+
+        voice_desc = self.voice_description.get("1.0", tk.END).strip()
+        if not voice_desc:
+            messagebox.showerror("Error", "Voice description is empty.")
+            return
+
+        # Get synthesis parameters
+        temperature = self.temperature.get()
+        top_p = self.top_p.get()
+        n_ctx = self.n_ctx.get()
+        n_gpu_layers = self.n_gpu_layers.get()
+
+        # Check if already cached
+        cached_path = get_cached_preview_path(voice_desc, model_path, temperature, top_p)
+        if cached_path:
+            self.log_message("Using cached voice preview...")
+            self._play_preview_audio(cached_path)
+            return
+
+        # Generate preview in background thread
+        self.log_message("Generating voice preview (this may take 10-30 seconds)...")
+        self.preview_button.config(state=tk.DISABLED, text="Generating...")
+
+        def generate_thread():
+            try:
+                preview_path = generate_voice_preview(
+                    voice_description=voice_desc,
+                    model_path=model_path,
+                    temperature=temperature,
+                    top_p=top_p,
+                    n_ctx=n_ctx,
+                    n_gpu_layers=n_gpu_layers,
+                )
+                self.after(0, self._preview_generated_success, preview_path)
+            except Exception as e:
+                self.after(0, self._preview_generated_error, str(e))
+
+        thread = threading.Thread(target=generate_thread, daemon=True)
+        thread.start()
+
+    def _preview_generated_success(self, preview_path):
+        """Handle successful preview generation."""
+        self.preview_button.config(state=tk.NORMAL, text="Preview Voice")
+        self.log_message("Voice preview generated successfully!")
+        self._play_preview_audio(preview_path)
+
+    def _preview_generated_error(self, error_msg):
+        """Handle preview generation error."""
+        self.preview_button.config(state=tk.NORMAL, text="Preview Voice")
+        self.log_message(f"Preview generation failed: {error_msg}")
+        messagebox.showerror("Preview Error", f"Failed to generate voice preview:\n{error_msg}")
+
+    def _play_preview_audio(self, audio_path):
+        """Play a preview audio file using simpleaudio."""
+        if sa is None:
+            self.log_message("Audio playback not available (simpleaudio not installed)")
+            messagebox.showinfo("Preview Ready",
+                f"Voice preview generated:\n{audio_path}\n\n"
+                "Install 'simpleaudio' package for in-app playback.")
+            return
+
+        try:
+            import soundfile as sf
+            audio_data, sample_rate = sf.read(audio_path)
+
+            # Convert to 16-bit PCM for simpleaudio
+            if audio_data.dtype != 'int16':
+                audio_data = (audio_data * 32767).astype('int16')
+
+            # Ensure audio is 1D (mono) or 2D (stereo)
+            if audio_data.ndim == 1:
+                num_channels = 1
+            else:
+                num_channels = audio_data.shape[1]
+
+            play_obj = sa.play_buffer(
+                audio_data,
+                num_channels=num_channels,
+                bytes_per_sample=2,
+                sample_rate=sample_rate
+            )
+
+            self.log_message(f"Playing voice preview ({len(audio_data)/sample_rate:.1f}s)...")
+
+        except Exception as e:
+            self.log_message(f"Audio playback error: {e}")
+            messagebox.showerror("Playback Error",
+                f"Failed to play audio:\n{e}\n\n"
+                f"Preview file saved at:\n{audio_path}")
 
 if __name__ == "__main__":
     app = MainWindow()
