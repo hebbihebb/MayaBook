@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=MayaBook
+Comment=EPUB to Audiobook Converter using Maya1 TTS
+Exec=/mnt/Games/MayaBook/launch_mayabook.sh
+Path=/mnt/Games/MayaBook
+Icon=applications-multimedia
+Terminal=false
+Categories=AudioVideo;Audio;
