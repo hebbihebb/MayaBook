@@ -38,8 +38,22 @@ It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model 
    The app reads an EPUB, cleans it to plain text, and splits it into small chunks (recommended: 70-80 words per chunk for optimal TTS quality and to avoid token limit issues).
 
 2. **Generate Audio Locally**
-   Each chunk is synthesized using the **Maya1 GGUF model** via `llama-cpp-python`:
+   Each chunk is synthesized using either:
 
+   **GGUF Model (Recommended)** via `llama-cpp-python`:
+   * Fast GPU-accelerated inference with CUDA
+   * Uses quantized models (Q4_K_M, Q5_K_M, Q8_0)
+   * Lower VRAM usage (~6-8GB for Q5_K_M)
+   * Proven stable for production use
+
+   **HuggingFace Transformers (Experimental)** via `transformers` + `bitsandbytes`:
+   * 4-bit quantized safetensor models
+   * Higher quality potential with full precision weights
+   * Requires more VRAM (~10-12GB)
+   * Supports emotion tags and advanced prompting
+   * **Note**: As of 2025-11-14, HF implementation fixed with proper EOS token handling
+
+   For both methods:
    * The model generates SNAC audio tokens from text and voice description
    * SNAC codec decodes tokens into 24 kHz audio waveforms
    * Each chunk is saved as a temporary WAV file
@@ -123,10 +137,18 @@ accelerate        # Multi-GPU support
 
 ### Model Files (Download Separately)
 
-* **Maya1 GGUF Model** (~15GB)
+* **Maya1 GGUF Model** (~12-15GB) - **Recommended for most users**
   - Download: [https://huggingface.co/maya-research/maya1](https://huggingface.co/maya-research/maya1)
-  - Recommended: `maya1.i1-Q5_K_M.gguf` (best quality/speed balance)
-  - Alternative: `maya1.i1-Q4_K_M.gguf` (faster, lower VRAM, slightly lower quality)
+  - Recommended: `maya1.i1-Q5_K_M.gguf` (best quality/speed balance, ~15GB)
+  - Alternative: `maya1.i1-Q4_K_M.gguf` (faster, lower VRAM, slightly lower quality, ~12GB)
+  - Higher quants: `maya1.i1-Q8_0.gguf` (maximum quality, ~25GB, slower)
+
+* **Maya1 HuggingFace Model** (~6-8GB) - **Experimental, for advanced users**
+  - Download: [https://huggingface.co/maya-research/maya1](https://huggingface.co/maya-research/maya1) (safetensor format)
+  - Uses 4-bit quantization via bitsandbytes (Linux only)
+  - Requires transformers, accelerate, bitsandbytes packages
+  - Select "huggingface" model type in GUI
+  - **Known Issue**: Full-book processing may have quality issues; best for testing/experimentation
 
 ---
 
@@ -360,9 +382,15 @@ MayaBook/
 
 **Bug Fixes:**
 - ✅ Fixed EPUB paragraph extraction (non-breaking space handling)
-- ✅ Fixed KV cache state bleeding between chunks
+- ✅ Fixed KV cache state bleeding between chunks (GGUF)
 - ✅ Fixed token limit overflow (optimized chunk size to 70 words)
+- ✅ Fixed HuggingFace EOS token handling (CODE_END_TOKEN_ID, repetition_penalty)
 - ✅ Enhanced diagnostic logging
+
+**Experimental Features:**
+- ✅ HuggingFace transformers support with 4-bit quantization
+- ✅ Safetensor model loading (GPU-accelerated with bitsandbytes)
+- ⚠️ HF model quality testing in progress
 
 ---
 
@@ -374,7 +402,11 @@ MayaBook/
 * **Streaming:** Must complete full synthesis before playback
 * **Platform limitations:**
   - bitsandbytes (4-bit quantization) only on Linux
-  - HuggingFace tensor path incomplete (GGUF recommended)
+  - HuggingFace safetensor path experimental (GGUF strongly recommended for production)
+* **HuggingFace model notes:**
+  - Best for short-form content and testing
+  - Full-book processing may produce lower quality audio
+  - Legacy mode (non-chapter-aware) uses truncated preview text - **always use chapter-aware mode**
 
 ---
 
@@ -549,9 +581,20 @@ You are free to:
 * **[Pygame](https://www.pygame.org/)** - Audio playback for voice previews
 * **[Librosa](https://librosa.org/)** - Advanced audio analysis and processing
 * **[FFmpeg](https://ffmpeg.org/)** - Video/audio encoding and muxing
+* **[Transformers](https://github.com/huggingface/transformers)** - HuggingFace model support
+* **[bitsandbytes](https://github.com/TimDettmers/bitsandbytes)** - 4-bit quantization (Linux)
+
+### Inspiration & Reference Projects
+* **[Abogen](https://github.com/denizsafak/abogen)** by Deniz Safak
+  - Audiobook generation tool that inspired MayaBook's M4B chapter support
+  - Reference implementation for chapter-aware audiobook creation
+  - Custom chapter marker syntax (`<<CHAPTER_MARKER:Name>>`)
+  - MIT License - Thank you for pioneering local audiobook generation!
 
 ### Community
 * Special thanks to the open-source community for making this project possible
+* The Maya1 community for sharing knowledge and testing results
+* Contributors to the HuggingFace model hub for model hosting and distribution
 
 ---
 
