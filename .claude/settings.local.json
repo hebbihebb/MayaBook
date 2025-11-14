@@ -16,7 +16,19 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git log:*)",
-      "Bash(rm:*)"
+      "Bash(rm:*)",
+      "Bash(nvidia-smi:*)",
+      "Bash(CMAKE_ARGS=\"-DGGML_CUDA=on\" pip install:*)",
+      "Bash(echo:*)",
+      "Bash(xdpyinfo:*)",
+      "Bash(tee:*)",
+      "Bash(ldconfig:*)",
+      "Bash(pip index:*)",
+      "Bash(sudo apt-get update:*)",
+      "Bash(sudo apt-get install:*)",
+      "Bash(export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH:*)",
+      "Bash(git config:*)",
+      "Bash(git push)"
     ],
     "deny": [],
     "ask": []
