@@ -1,3 +1,4 @@
+# Core dependencies (required)
 ebooklib
 beautifulsoup4
 llama-cpp-python
@@ -5,10 +6,14 @@ snac
 soundfile
 numpy
 torch
-transformers
-bitsandbytes
-accelerate
 platformdirs
+pygame
 
-# Optional: For advanced audio features (speech rate adjustment)
-# librosa
+# Optional: Enhanced features
+librosa              # Advanced audio processing (speech rate, analysis)
+transformers         # HuggingFace model support (experimental)
+bitsandbytes         # 4-bit quantization (Linux only)
+accelerate           # Multi-GPU support
+
+# Note: For GPU acceleration, install llama-cpp-python with CUDA support:
+# pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
