@@ -4,7 +4,15 @@ import logging
 import threading
 import numpy as np
 import zlib
-from llama_cpp import Llama
+
+# Make llama_cpp optional - only needed for GGUF models
+try:
+    from llama_cpp import Llama
+    LLAMA_CPP_AVAILABLE = True
+except ImportError:
+    LLAMA_CPP_AVAILABLE = False
+    Llama = None
+
 from snac import SNAC
 from .maya1_constants import (
 SOH_ID, EOH_ID, SOA_ID, TEXT_EOT_ID,
@@ -103,6 +111,12 @@ def synthesize_chunk_local(
     n_ctx: int = 4096,
     n_gpu_layers: int | None = None,
 ) -> str:
+    if not LLAMA_CPP_AVAILABLE:
+        raise RuntimeError(
+            "llama-cpp-python is not installed. "
+            "GGUF models require llama-cpp-python. "
+            "Please use model_type='huggingface' instead, or install llama-cpp-python."
+        )
     logger.info(f"Synthesizing text (length={len(text)} chars): {text[:100]}...")
     llm, snac_model = _ensure_models(model_path, n_ctx=n_ctx, n_gpu_layers=n_gpu_layers)
     prompt_tokens = _build_prompt_tokens(llm, voice_description, text)

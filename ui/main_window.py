@@ -136,7 +136,7 @@ class MainWindow(tk.Tk):
 
         # Voice Preset Selection
         ttk.Label(tts_frame, text="Voice Preset:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        self.voice_preset = tk.StringVar(value="Professional Female Narrator")
+        self.voice_preset = tk.StringVar(value="Young Adult Female (Energetic)")
         voice_preset_combo = ttk.Combobox(tts_frame, textvariable=self.voice_preset,
                                          values=get_preset_names(), state="readonly", width=40)
         voice_preset_combo.grid(row=0, column=1, padx=5, pady=5, sticky="w")
@@ -152,11 +152,12 @@ class MainWindow(tk.Tk):
         self.voice_description.grid(row=1, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
 
         # Set default voice description from preset
-        default_preset = get_preset_by_name("Professional Female Narrator")
+        default_preset = get_preset_by_name("Young Adult Female (Energetic)")
         if default_preset:
             self.voice_description.insert(tk.END, default_preset["description"])
         else:
-            self.voice_description.insert(tk.END, "A female speaker with a warm, calm, and clear voice, delivering the narration in a standard American English accent. Her tone is engaging and pleasant, suitable for long listening sessions.")
+            # Fallback if preset not found
+            self.voice_description.insert(tk.END, "A bright, energetic female voice in her early 20s with excellent articulation. Her delivery is expressive and dynamic, with a contemporary American accent that's perfect for young adult fiction and romance novels.")
 
         ttk.Label(tts_frame, text="Temperature:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
         self.temperature = tk.DoubleVar(value=0.45)

@@ -166,20 +166,25 @@ def synthesize_chunk_hf(
     logger.info(f"Generation started on GPU device {device}" if device.type == "cuda" else f"Generation started on {device}")
     logger.debug(f"Input shape: {input_ids.shape}, device: {input_ids.device}")
 
-    # Generate
+    # Generate - use CODE_END as EOS (as per official implementation)
     with torch.inference_mode():
         output = model.generate(
             input_ids,
             max_new_tokens=max_tokens,
+            min_new_tokens=28,  # At least 4 SNAC frames
             temperature=temperature,
             top_p=top_p,
             do_sample=True,
+            repetition_penalty=1.1,  # Prevent token loops (from official implementation)
             pad_token_id=tokenizer.eos_token_id,
+            eos_token_id=CODE_END_TOKEN_ID,  # Stop at end of speech token (official way)
         )
 
     # Extract generated tokens
     gen_ids = output[0][len(full_tokens):].tolist()
     logger.debug(f"Generated {len(gen_ids)} tokens")
+    logger.debug(f"First 20 generated token IDs: {gen_ids[:20]}")
+    logger.debug(f"Last 20 generated token IDs: {gen_ids[-20:]}")
 
     # Extract SNAC tokens
     snac_ids = _extract_snac_ids(gen_ids)
