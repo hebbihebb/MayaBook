@@ -8,13 +8,22 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Change to the script directory
 cd "$SCRIPT_DIR"
 
-# Check if python3 is available
-if ! command -v python3 &> /dev/null; then
+# Try to find Python in conda environment first, then fall back to system python3
+if [ -f "$HOME/miniconda3/bin/python" ]; then
+    PYTHON="$HOME/miniconda3/bin/python"
+elif [ -f "$HOME/anaconda3/bin/python" ]; then
+    PYTHON="$HOME/anaconda3/bin/python"
+elif command -v python3 &> /dev/null; then
+    PYTHON="python3"
+else
     zenity --error --text="Python 3 is not installed.\nPlease install Python 3 to run MayaBook." --title="MayaBook Error" 2>/dev/null || \
     notify-send "MayaBook Error" "Python 3 is not installed" || \
     echo "ERROR: Python 3 is not installed"
     exit 1
 fi
+
+echo "Using Python: $PYTHON"
+$PYTHON --version
 
 # Check if app.py exists
 if [ ! -f "app.py" ]; then
@@ -25,7 +34,7 @@ if [ ! -f "app.py" ]; then
 fi
 
 # Launch the application
-python3 app.py
+$PYTHON app.py
 
 # Keep terminal open if there was an error
 if [ $? -ne 0 ]; then
