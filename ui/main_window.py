@@ -14,12 +14,13 @@ from core.m4b_export import verify_ffmpeg_available
 from core.voice_presets import get_preset_names, get_preset_by_name
 from core.voice_preview import generate_voice_preview, is_preview_cached, get_cached_preview_path
 
-# The old preview system used pyttsx3, which is no longer the focus.
-# We'll keep the simpleaudio part for potential playback.
+# Audio playback using pygame
 try:
-    import simpleaudio as sa
-except ImportError:
-    sa = None
+    import pygame.mixer
+    pygame.mixer.init()
+    PYGAME_AVAILABLE = True
+except (ImportError, Exception):
+    PYGAME_AVAILABLE = False
 
 class MainWindow(tk.Tk):
     def __init__(self):
@@ -760,36 +761,28 @@ class MainWindow(tk.Tk):
         messagebox.showerror("Preview Error", f"Failed to generate voice preview:\n{error_msg}")
 
     def _play_preview_audio(self, audio_path):
-        """Play a preview audio file using simpleaudio."""
-        if sa is None:
-            self.log_message("Audio playback not available (simpleaudio not installed)")
+        """Play a preview audio file using pygame."""
+        if not PYGAME_AVAILABLE:
+            self.log_message("Audio playback not available (pygame not installed)")
             messagebox.showinfo("Preview Ready",
                 f"Voice preview generated:\n{audio_path}\n\n"
-                "Install 'simpleaudio' package for in-app playback.")
+                "Install 'pygame' package for in-app playback.")
             return
 
         try:
+            # Load and play the audio file using pygame
+            pygame.mixer.music.load(audio_path)
+            pygame.mixer.music.play()
+
+            # Get duration for logging
             import soundfile as sf
             audio_data, sample_rate = sf.read(audio_path)
+            duration = len(audio_data) / sample_rate
 
-            # Convert to 16-bit PCM for simpleaudio
-            if audio_data.dtype != 'int16':
-                audio_data = (audio_data * 32767).astype('int16')
-
-            # Ensure audio is 1D (mono) or 2D (stereo)
-            if audio_data.ndim == 1:
-                num_channels = 1
-            else:
-                num_channels = audio_data.shape[1]
-
-            play_obj = sa.play_buffer(
-                audio_data,
-                num_channels=num_channels,
-                bytes_per_sample=2,
-                sample_rate=sample_rate
-            )
-
-            self.log_message(f"Playing voice preview ({len(audio_data)/sample_rate:.1f}s)...")
+            self.log_message(f"Playing voice preview ({duration:.1f}s)...")
+            messagebox.showinfo("Preview Playing",
+                f"Voice preview is playing ({duration:.1f}s)\n\n"
+                f"Preview file saved at:\n{audio_path}")
 
         except Exception as e:
             self.log_message(f"Audio playback error: {e}")

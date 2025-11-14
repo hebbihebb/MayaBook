@@ -31,11 +31,13 @@ from core.progress_tracker import ProgressTracker, format_progress_message
 from core.batch_processor import BatchProcessor, BatchItemStatus
 from core.audio_advanced import PronunciationDictionary
 
-# Simple audio
+# Audio playback using pygame
 try:
-    import simpleaudio as sa
-except ImportError:
-    sa = None
+    import pygame.mixer
+    pygame.mixer.init()
+    PYGAME_AVAILABLE = True
+except (ImportError, Exception):
+    PYGAME_AVAILABLE = False
 
 
 class EnhancedMainWindow(tk.Tk):
