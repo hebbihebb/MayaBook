@@ -13,6 +13,7 @@ from core.pipeline import run_pipeline, run_pipeline_with_chapters
 from core.m4b_export import verify_ffmpeg_available
 from core.voice_presets import get_preset_names, get_preset_by_name
 from core.voice_preview import generate_voice_preview, is_preview_cached, get_cached_preview_path
+from ui.chapter_selection_dialog import show_chapter_selection_dialog
 
 # Audio playback using pygame
 try:
@@ -30,7 +31,8 @@ class MainWindow(tk.Tk):
 
         self.stop_generation_flag = None
         self.generation_thread = None
-        self.chapters_data = None  # Store extracted chapters
+        self.chapters_data = None  # Store extracted chapters (all chapters from EPUB)
+        self.selected_chapters = None  # Store user-selected chapters for processing
         self.extracted_metadata = None  # Store extracted metadata
 
         self._create_widgets()
@@ -267,6 +269,10 @@ class MainWindow(tk.Tk):
         self.extract_button = ttk.Button(actions_frame, text="Extract EPUB", command=self._extract_epub)
         self.extract_button.pack(side=tk.LEFT, padx=5)
 
+        self.select_chapters_button = ttk.Button(actions_frame, text="Select Chapters...",
+                                                 command=self._select_chapters, state=tk.DISABLED)
+        self.select_chapters_button.pack(side=tk.LEFT, padx=5)
+
         self.generate_button = ttk.Button(actions_frame, text="Start Generation", command=self._start_generation)
         self.generate_button.pack(side=tk.LEFT, padx=5)
 
@@ -392,6 +398,12 @@ class MainWindow(tk.Tk):
 
                 self.text_preview.insert(tk.END, preview_text)
                 self.log_message(f"EPUB extracted: {len(chapters)} chapters, {sum(len(t.split()) for _, t in chapters)} total words")
+
+                # Enable chapter selection button
+                self.select_chapters_button.config(state=tk.NORMAL)
+
+                # Auto-launch chapter selection dialog
+                self._select_chapters()
             else:
                 self.text_preview.insert(tk.END, "Error: No chapters extracted from EPUB.")
                 self.log_message("Warning: No chapters found in EPUB.")
@@ -399,6 +411,48 @@ class MainWindow(tk.Tk):
         except Exception as e:
             self.log_message(f"Error extracting EPUB: {e}")
             messagebox.showerror("EPUB Error", f"Failed to extract text from EPUB:\n{e}")
+
+    def _select_chapters(self):
+        """Launch chapter selection dialog."""
+        if not self.chapters_data:
+            messagebox.showwarning("No Chapters", "Please extract an EPUB first.")
+            return
+
+        # Show chapter selection dialog
+        selected = show_chapter_selection_dialog(self, self.chapters_data, self.extracted_metadata)
+
+        if selected is not None:
+            # User clicked OK
+            self.selected_chapters = selected
+
+            # Update preview to show selected chapters
+            self.text_preview.delete("1.0", tk.END)
+
+            preview_text = f"Selected {len(selected)} of {len(self.chapters_data)} chapters:\n\n"
+            for i, (title, text) in enumerate(selected, 1):
+                word_count = len(text.split())
+                preview_text += f"{i}. {title} ({word_count} words)\n"
+
+            preview_text += "\n" + "=" * 60 + "\n\n"
+
+            # Show preview of selected chapters (first 1000 chars)
+            for title, text in selected:
+                preview_text += f"=== {title} ===\n\n"
+                preview_text += text[:1000]
+                if len(text) > 1000:
+                    preview_text += "...\n\n"
+                else:
+                    preview_text += "\n\n"
+
+            self.text_preview.insert(tk.END, preview_text)
+
+            total_words = sum(len(t.split()) for _, t in selected)
+            self.log_message(f"Selected {len(selected)} chapters ({total_words:,} words total)")
+        else:
+            # User cancelled - keep previous selection or use all chapters
+            if self.selected_chapters is None:
+                self.selected_chapters = self.chapters_data
+                self.log_message("No selection made - will process all chapters")
 
     def _start_generation(self):
         # --- Validate inputs ---
@@ -459,8 +513,11 @@ class MainWindow(tk.Tk):
                 messagebox.showerror("Error", "Please extract EPUB first to use chapter-aware processing.")
                 return
 
+            # Use selected chapters if available, otherwise use all chapters
+            chapters_to_process = self.selected_chapters if self.selected_chapters else self.chapters_data
+
             # --- Prepare for chapter-aware pipeline ---
-            self.log_message("Starting chapter-aware generation...")
+            self.log_message(f"Starting chapter-aware generation ({len(chapters_to_process)} chapters)...")
             self.progress['value'] = 0
             self.generate_button.config(state=tk.DISABLED)
             self.cancel_button.config(state=tk.NORMAL)
@@ -483,7 +540,7 @@ class MainWindow(tk.Tk):
             self.generation_thread = threading.Thread(
                 target=self._run_chapter_pipeline_thread,
                 args=(
-                    self.chapters_data, metadata, model_path,
+                    chapters_to_process, metadata, model_path,
                     self.voice_description.get("1.0", tk.END).strip(),
                     self.chunk_size.get(), self.gap_size.get(),
                     output_base, cover_path, output_format,
@@ -497,10 +554,17 @@ class MainWindow(tk.Tk):
             self.generation_thread.start()
 
         else:
-            # Legacy mode - validate text
-            epub_text = self.text_preview.get("1.0", tk.END).strip()
+            # Legacy mode - FIXED: Use full chapter data instead of truncated preview
+            if not self.chapters_data:
+                messagebox.showerror("Error", "Please extract EPUB first.")
+                return
+
+            # Combine all chapters into single text (full text, not truncated)
+            chapters_to_process = self.selected_chapters if self.selected_chapters else self.chapters_data
+            epub_text = "\n\n".join(text for _, text in chapters_to_process)
+
             if not epub_text:
-                messagebox.showerror("Error", "EPUB text is empty. Please extract an EPUB first.")
+                messagebox.showerror("Error", "EPUB text is empty.")
                 return
 
             if not cover_path or not os.path.exists(cover_path):
