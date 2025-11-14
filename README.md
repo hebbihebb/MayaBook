@@ -2,13 +2,13 @@
 
 **EPUB → TTS → MP4/M4B Audiobook Generator**
 
-MayaBook is a professional desktop application that converts EPUB books into high-quality narrated audiobooks (MP4/M4B formats).
+MayaBook is a work in progress application that converts EPUB books into high-quality narrated audiobooks (MP4/M4B formats).
 It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model running locally via **GGUF quantized models** and `llama-cpp-python` to generate expressive, human-like speech with GPU acceleration.
 
 ![MayaBook GUI](screenshot.jpg)
 
 **Version:** 2.0 Enhanced Edition
-**Status:** Production-ready with advanced features
+**Status:** Works mostly...
 
 ---
 
@@ -550,16 +550,8 @@ You are free to:
 * **[Librosa](https://librosa.org/)** - Advanced audio analysis and processing
 * **[FFmpeg](https://ffmpeg.org/)** - Video/audio encoding and muxing
 
-### Project Development
-* **Application Design & Integration:** hebbihebb
-* **AI Development Assistant:** Claude (Anthropic)
-  - Enhanced features implementation
-  - Bug fixes and optimization
-  - Documentation and testing
-
 ### Community
 * Special thanks to the open-source community for making this project possible
-* Beta testers and early adopters for feedback and bug reports
 
 ---
 
