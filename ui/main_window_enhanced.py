@@ -292,17 +292,21 @@ class EnhancedMainWindow(tk.Tk):
                        variable=self.use_chapters, command=self._toggle_chapter_options).grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
         self.save_separately = tk.BooleanVar(value=False)
-        ttk.Checkbutton(chapter_frame, text="Save chapters separately",
-                       variable=self.save_separately).grid(row=1, column=0, padx=25, pady=2, sticky="w")
+        self.save_separately_cb = ttk.Checkbutton(chapter_frame, text="Save chapters separately",
+                                                  variable=self.save_separately)
+        self.save_separately_cb.grid(row=1, column=0, padx=25, pady=2, sticky="w")
 
         self.merge_chapters = tk.BooleanVar(value=True)
-        ttk.Checkbutton(chapter_frame, text="Create merged file",
-                       variable=self.merge_chapters).grid(row=2, column=0, padx=25, pady=2, sticky="w")
+        self.merge_chapters_cb = ttk.Checkbutton(chapter_frame, text="Create merged file",
+                                                 variable=self.merge_chapters)
+        self.merge_chapters_cb.grid(row=2, column=0, padx=25, pady=2, sticky="w")
 
-        ttk.Label(chapter_frame, text="Chapter silence (seconds):").grid(row=3, column=0, padx=25, pady=5, sticky="w")
+        self.chapter_silence_label = ttk.Label(chapter_frame, text="Chapter silence (seconds):")
+        self.chapter_silence_label.grid(row=3, column=0, padx=25, pady=5, sticky="w")
         self.chapter_silence = tk.DoubleVar(value=2.0)
-        ttk.Spinbox(chapter_frame, from_=0.5, to=5.0, increment=0.5,
-                   textvariable=self.chapter_silence, width=8).grid(row=3, column=1, padx=5, pady=5, sticky="w")
+        self.chapter_silence_spinbox = ttk.Spinbox(chapter_frame, from_=0.5, to=5.0, increment=0.5,
+                                                   textvariable=self.chapter_silence, width=8)
+        self.chapter_silence_spinbox.grid(row=3, column=1, padx=5, pady=5, sticky="w")
 
         # --- Metadata ---
         metadata_frame = ttk.LabelFrame(main_frame, text="Metadata")
@@ -340,6 +344,9 @@ class EnhancedMainWindow(tk.Tk):
         self.text_preview.config(yscrollcommand=preview_scroll.set)
         self.text_preview.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         preview_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # Set initial state
+        self._toggle_chapter_options()
 
     def _create_action_buttons(self):
         actions_frame = ttk.Frame(self)
@@ -704,7 +711,11 @@ class EnhancedMainWindow(tk.Tk):
 
     def _toggle_chapter_options(self):
         """Toggle chapter options"""
-        pass  # Implement based on existing logic
+        state = tk.NORMAL if self.use_chapters.get() else tk.DISABLED
+        self.save_separately_cb.config(state=state)
+        self.merge_chapters_cb.config(state=state)
+        self.chapter_silence_label.config(state=state)
+        self.chapter_silence_spinbox.config(state=state)
 
     def _check_ffmpeg(self):
         """Check FFmpeg availability"""
