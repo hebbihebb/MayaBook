@@ -177,9 +177,28 @@ class MainWindow(tk.Tk):
         self.gap_size = tk.DoubleVar(value=0.25)
         ttk.Entry(tts_frame, textvariable=self.gap_size, width=10).grid(row=5, column=1, padx=5, pady=5, sticky="w")
 
+        # --- Quick Test ---
+        quick_test_frame = ttk.LabelFrame(main_frame, text="Quick Test (No EPUB Required)")
+        quick_test_frame.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
+        quick_test_frame.grid_columnconfigure(0, weight=1)
+
+        ttk.Label(quick_test_frame, text="Enter text to quickly test TTS with current settings:",
+                 foreground="gray").grid(row=0, column=0, columnspan=2, padx=5, pady=(5, 0), sticky="w")
+
+        self.quick_test_text = tk.Text(quick_test_frame, height=4, width=60, wrap=tk.WORD)
+        self.quick_test_text.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+        self.quick_test_text.insert(tk.END, "Hello! This is a quick test of the Maya1 text to speech system. The voice should sound natural and expressive.")
+
+        quick_test_scrollbar = ttk.Scrollbar(quick_test_frame, orient=tk.VERTICAL, command=self.quick_test_text.yview)
+        quick_test_scrollbar.grid(row=1, column=1, pady=5, sticky="ns")
+        self.quick_test_text.config(yscrollcommand=quick_test_scrollbar.set)
+
+        self.quick_test_button = ttk.Button(quick_test_frame, text="Generate Quick Test Audio", command=self._quick_test_generation)
+        self.quick_test_button.grid(row=2, column=0, columnspan=2, padx=5, pady=5)
+
         # --- Output Format ---
         format_frame = ttk.LabelFrame(main_frame, text="Output Format")
-        format_frame.grid(row=3, column=0, padx=5, pady=5, sticky="ew")
+        format_frame.grid(row=4, column=0, padx=5, pady=5, sticky="ew")
         format_frame.grid_columnconfigure(1, weight=1)
 
         ttk.Label(format_frame, text="Format:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -194,7 +213,7 @@ class MainWindow(tk.Tk):
 
         # --- Chapter Options ---
         self.chapter_frame = ttk.LabelFrame(main_frame, text="Chapter Options")
-        self.chapter_frame.grid(row=4, column=0, padx=5, pady=5, sticky="ew")
+        self.chapter_frame.grid(row=5, column=0, padx=5, pady=5, sticky="ew")
         self.chapter_frame.grid_columnconfigure(1, weight=1)
 
         self.use_chapters = tk.BooleanVar(value=True)
@@ -220,7 +239,7 @@ class MainWindow(tk.Tk):
 
         # --- Metadata ---
         self.metadata_frame = ttk.LabelFrame(main_frame, text="Metadata (Optional)")
-        self.metadata_frame.grid(row=5, column=0, padx=5, pady=5, sticky="ew")
+        self.metadata_frame.grid(row=6, column=0, padx=5, pady=5, sticky="ew")
         self.metadata_frame.grid_columnconfigure(1, weight=1)
 
         ttk.Label(self.metadata_frame, text="Title:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -253,8 +272,8 @@ class MainWindow(tk.Tk):
 
         # --- EPUB Preview ---
         preview_frame = ttk.LabelFrame(main_frame, text="EPUB Text Preview")
-        preview_frame.grid(row=6, column=0, padx=5, pady=5, sticky="nsew")
-        main_frame.grid_rowconfigure(6, weight=1)
+        preview_frame.grid(row=7, column=0, padx=5, pady=5, sticky="nsew")
+        main_frame.grid_rowconfigure(7, weight=1)
 
         self.text_preview = tk.Text(preview_frame, wrap=tk.WORD, height=10)
         self.text_preview_scrollbar = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=self.text_preview.yview)
@@ -595,6 +614,130 @@ class MainWindow(tk.Tk):
                 daemon=True
             )
             self.generation_thread.start()
+
+    def _quick_test_generation(self):
+        """Quick test generation - bypasses EPUB workflow."""
+        # --- Validate inputs ---
+        model_path = self.model_path.get()
+        if not model_path:
+            messagebox.showerror("Error", "Please select a model file.")
+            return
+
+        if not os.path.exists(model_path):
+            messagebox.showerror("Model Not Found",
+                f"Model file not found:\n{model_path}\n\n"
+                "Please download maya1.i1-Q5_K_M.gguf from:\n"
+                "https://huggingface.co/maya-research/maya1")
+            return
+
+        # Check if model file is too small (likely a placeholder)
+        model_size = os.path.getsize(model_path)
+        if model_size < 1_000_000:  # Less than 1MB is suspicious
+            response = messagebox.askyesno("Warning: Small Model File",
+                f"The model file is only {model_size:,} bytes.\n"
+                "This appears to be a placeholder, not a real model.\n\n"
+                "Synthesis will likely fail. Continue anyway?")
+            if not response:
+                return
+
+        # Get test text
+        test_text = self.quick_test_text.get("1.0", tk.END).strip()
+        if not test_text:
+            messagebox.showerror("Error", "Please enter some test text.")
+            return
+
+        # Get output directory
+        output_dir = self.output_folder.get()
+        if not output_dir:
+            output_dir = str(Path.home() / "MayaBook_Output")
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+        # Create quick test output path
+        out_wav = str(Path(output_dir) / "quick_test.wav")
+
+        # Disable button during generation
+        self.quick_test_button.config(state=tk.DISABLED, text="Generating...")
+        self.log_message("Starting quick test generation...")
+
+        # Run in background thread
+        def quick_test_thread():
+            try:
+                from core.chunking import chunk_text
+                from core.audio_combine import concat_wavs
+                import tempfile
+
+                # Get synthesis parameters
+                voice_desc = self.voice_description.get("1.0", tk.END).strip()
+                chunk_size = self.chunk_size.get()
+                gap_s = self.gap_size.get()
+                temperature = self.temperature.get()
+                top_p = self.top_p.get()
+                n_ctx = self.n_ctx.get()
+                n_gpu_layers = self.n_gpu_layers.get()
+                model_type = self.model_type.get()
+
+                # Import the appropriate TTS module based on model type
+                if model_type == "gguf":
+                    from core.tts_maya1_local import synthesize_chunk_local as synthesize_fn
+                else:
+                    from core.tts_maya1_hf import synthesize_chunk_hf as synthesize_fn
+
+                # Chunk the text
+                chunks = chunk_text(test_text, max_words=chunk_size)
+                self.log_message(f"Text split into {len(chunks)} chunk(s)")
+
+                # Synthesize each chunk
+                wav_paths = []
+                for i, chunk in enumerate(chunks, 1):
+                    self.log_message(f"Synthesizing chunk {i}/{len(chunks)}...")
+
+                    if model_type == "gguf":
+                        wav_path = synthesize_fn(
+                            text=chunk,
+                            voice_desc=voice_desc,
+                            model_path=model_path,
+                            temperature=temperature,
+                            top_p=top_p,
+                            n_ctx=n_ctx,
+                            n_gpu_layers=n_gpu_layers,
+                            max_tokens=2500,
+                        )
+                    else:  # huggingface
+                        wav_path = synthesize_fn(
+                            text=chunk,
+                            voice_desc=voice_desc,
+                            model_path=model_path,
+                            temperature=temperature,
+                            top_p=top_p,
+                        )
+
+                    wav_paths.append(wav_path)
+
+                # Concatenate chunks
+                self.log_message("Combining audio chunks...")
+                concat_wavs(wav_paths, out_wav, gap_seconds=gap_s)
+
+                self.after(0, self._quick_test_complete, out_wav)
+
+            except Exception as e:
+                self.after(0, self._quick_test_failed, str(e))
+
+        thread = threading.Thread(target=quick_test_thread, daemon=True)
+        thread.start()
+
+    def _quick_test_complete(self, wav_path):
+        """Handle successful quick test completion."""
+        self.quick_test_button.config(state=tk.NORMAL, text="Generate Quick Test Audio")
+        self.log_message(f"Quick test complete! Saved to: {wav_path}")
+
+        # Try to play the audio
+        self._play_preview_audio(wav_path)
+
+    def _quick_test_failed(self, error_msg):
+        """Handle quick test failure."""
+        self.quick_test_button.config(state=tk.NORMAL, text="Generate Quick Test Audio")
+        self.log_message(f"Quick test failed: {error_msg}")
+        messagebox.showerror("Quick Test Error", f"Failed to generate quick test:\n{error_msg}")
 
     def _run_chapter_pipeline_thread(self, chapters, metadata, model_path, voice_desc,
                                     chunk_size, gap_s, output_base, cover_path, output_format,
