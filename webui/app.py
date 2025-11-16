@@ -117,8 +117,8 @@ def create_ui():
             )
             ui.badge('v1.0', color='orange').classes('text-sm')
 
-    # Main container
-    with ui.column().classes('w-full max-w-7xl mx-auto p-4 gap-4'):
+    # Main container - wider layout for better space utilization
+    with ui.column().classes('w-full max-w-[1600px] mx-auto p-4 gap-4'):
 
         # Tab layout for organized sections
         with ui.tabs().classes('w-full') as tabs:
@@ -162,13 +162,6 @@ def create_ui():
 
                 with ui.card().classes('maya-card'):
                     ui.label('Model Configuration').classes('maya-section-header')
-
-                    with ui.row().classes('w-full gap-4'):
-                        model_type_select = ui.select(
-                            label='Model Type',
-                            options=['gguf', 'huggingface'],
-                            value='gguf'
-                        ).classes('flex-1')
 
                     # Detect available models
                     available_models = detect_available_models()
@@ -235,7 +228,16 @@ def create_ui():
                             f'color: {COLORS["warning"]}'
                         )
 
+                    ui.label('Model Settings').classes('text-sm mt-4 mb-2').style(
+                        f'color: {COLORS["text_secondary"]}'
+                    )
                     with ui.row().classes('w-full gap-4'):
+                        model_type_select = ui.select(
+                            label='Model Type',
+                            options=['gguf', 'huggingface'],
+                            value='gguf'
+                        ).classes('flex-1')
+
                         n_ctx_input = ui.number(
                             label='Context Size (n_ctx)',
                             value=4096,
@@ -255,128 +257,149 @@ def create_ui():
             # VOICE & TTS TAB
             # ==========================
             with ui.tab_panel(tab_voice):
-                with ui.card().classes('maya-card'):
-                    ui.label('Voice Selection').classes('maya-section-header')
+                # Two-column layout for better space utilization
+                with ui.row().classes('w-full gap-4'):
+                    # Left column: Voice Selection
+                    with ui.column().classes('flex-1'):
+                        with ui.card().classes('maya-card h-full'):
+                            ui.label('Voice Selection').classes('maya-section-header')
 
-                    # Voice preset selector
-                    preset_names = ['Custom'] + get_preset_names()
-                    voice_preset_select = ui.select(
-                        label='Voice Preset',
-                        options=preset_names,
-                        value='Young Adult Female (Energetic)'
-                    ).classes('w-full')
+                            # Voice preset selector
+                            preset_names = ['Custom'] + get_preset_names()
+                            voice_preset_select = ui.select(
+                                label='Voice Preset',
+                                options=preset_names,
+                                value='Young Adult Female (Energetic)'
+                            ).classes('w-full')
 
-                    # Custom voice description
-                    voice_desc_input = ui.textarea(
-                        label='Voice Description',
-                        placeholder='Describe the voice characteristics...'
-                    ).classes('w-full maya-input').props('rows=4')
+                            # Custom voice description - more rows for better editing
+                            voice_desc_input = ui.textarea(
+                                label='Voice Description',
+                                placeholder='Describe the voice characteristics...'
+                            ).classes('w-full maya-input').props('rows=8')
 
-                    # Update voice description when preset changes
-                    def update_voice_description():
-                        preset_name = voice_preset_select.value
-                        if preset_name != 'Custom':
-                            preset = get_preset_by_name(preset_name)
-                            if preset:
-                                voice_desc_input.value = preset['description']
+                            # Update voice description when preset changes
+                            def update_voice_description():
+                                preset_name = voice_preset_select.value
+                                if preset_name != 'Custom':
+                                    preset = get_preset_by_name(preset_name)
+                                    if preset:
+                                        voice_desc_input.value = preset['description']
 
-                    voice_preset_select.on_value_change(lambda: update_voice_description())
+                            voice_preset_select.on_value_change(lambda: update_voice_description())
 
-                    # Voice preview button
-                    with ui.row().classes('w-full gap-2'):
-                        preview_btn = ui.button(
-                            'Preview Voice',
-                            icon='play_arrow',
-                            on_click=lambda: generate_preview()
-                        ).classes('maya-btn-secondary')
-                        preview_status = ui.label('').classes('text-sm')
+                            # Voice preview button
+                            with ui.row().classes('w-full gap-2 mt-4'):
+                                preview_btn = ui.button(
+                                    'Preview Voice',
+                                    icon='play_arrow',
+                                    on_click=lambda: generate_preview()
+                                ).classes('maya-btn-secondary')
+                                preview_status = ui.label('').classes('text-sm')
 
-                with ui.card().classes('maya-card'):
-                    ui.label('TTS Parameters').classes('maya-section-header')
+                    # Right column: TTS Parameters
+                    with ui.column().classes('flex-1'):
+                        with ui.card().classes('maya-card h-full'):
+                            ui.label('TTS Parameters').classes('maya-section-header')
 
-                    with ui.row().classes('w-full gap-4'):
-                        temperature_slider = ui.slider(
-                            min=0.0,
-                            max=1.0,
-                            step=0.05,
-                            value=0.45
-                        ).classes('flex-1 maya-slider')
-                        temperature_label = ui.label('Temperature: 0.45').classes('w-32 text-right')
+                            ui.label('Temperature').classes('text-sm mb-1').style(
+                                f'color: {COLORS["text_secondary"]}'
+                            )
+                            with ui.row().classes('w-full gap-4 mb-6'):
+                                temperature_slider = ui.slider(
+                                    min=0.0,
+                                    max=1.0,
+                                    step=0.05,
+                                    value=0.45
+                                ).classes('flex-1 maya-slider')
+                                temperature_label = ui.label('0.45').classes('w-16 text-right font-semibold')
 
-                        temperature_slider.on_value_change(
-                            lambda e: temperature_label.set_text(f'Temperature: {e.value:.2f}')
-                        )
+                                temperature_slider.on_value_change(
+                                    lambda e: temperature_label.set_text(f'{e.value:.2f}')
+                                )
 
-                    with ui.row().classes('w-full gap-4'):
-                        top_p_slider = ui.slider(
-                            min=0.0,
-                            max=1.0,
-                            step=0.05,
-                            value=0.92
-                        ).classes('flex-1 maya-slider')
-                        top_p_label = ui.label('Top-p: 0.92').classes('w-32 text-right')
+                            ui.label('Top-p (Nucleus Sampling)').classes('text-sm mb-1').style(
+                                f'color: {COLORS["text_secondary"]}'
+                            )
+                            with ui.row().classes('w-full gap-4 mb-6'):
+                                top_p_slider = ui.slider(
+                                    min=0.0,
+                                    max=1.0,
+                                    step=0.05,
+                                    value=0.92
+                                ).classes('flex-1 maya-slider')
+                                top_p_label = ui.label('0.92').classes('w-16 text-right font-semibold')
 
-                        top_p_slider.on_value_change(
-                            lambda e: top_p_label.set_text(f'Top-p: {e.value:.2f}')
-                        )
+                                top_p_slider.on_value_change(
+                                    lambda e: top_p_label.set_text(f'{e.value:.2f}')
+                                )
 
-                    with ui.row().classes('w-full gap-4'):
-                        chunk_size_input = ui.number(
-                            label='Chunk Size (words)',
-                            value=70,
-                            min=20,
-                            max=150,
-                            step=10
-                        ).classes('flex-1')
+                            with ui.row().classes('w-full gap-4'):
+                                chunk_size_input = ui.number(
+                                    label='Chunk Size (words)',
+                                    value=70,
+                                    min=20,
+                                    max=150,
+                                    step=10
+                                ).classes('flex-1')
 
-                        gap_input = ui.number(
-                            label='Gap Between Chunks (s)',
-                            value=0.25,
-                            min=0.0,
-                            max=2.0,
-                            step=0.05,
-                            format='%.2f'
-                        ).classes('flex-1')
+                                gap_input = ui.number(
+                                    label='Gap Between Chunks (s)',
+                                    value=0.25,
+                                    min=0.0,
+                                    max=2.0,
+                                    step=0.05,
+                                    format='%.2f'
+                                ).classes('flex-1')
 
             # ==========================
             # OUTPUT & METADATA TAB
             # ==========================
             with ui.tab_panel(tab_output):
-                with ui.card().classes('maya-card'):
-                    ui.label('Output Configuration').classes('maya-section-header')
+                # Two-column layout for better space utilization
+                with ui.row().classes('w-full gap-4'):
+                    # Left column: Output Configuration
+                    with ui.column().classes('flex-1'):
+                        with ui.card().classes('maya-card h-full'):
+                            ui.label('Output Configuration').classes('maya-section-header')
 
-                    output_format_select = ui.select(
-                        label='Output Format',
-                        options=['m4b', 'wav', 'mp4'],
-                        value='m4b'
-                    ).classes('w-full')
+                            output_format_select = ui.select(
+                                label='Output Format',
+                                options=['m4b', 'wav', 'mp4'],
+                                value='m4b'
+                            ).classes('w-full')
 
-                    with ui.column().classes('w-full gap-2'):
-                        enable_chapters_switch = ui.switch('Enable Chapter-Aware Processing', value=True)
-                        save_chapters_switch = ui.switch('Save Chapters Separately', value=False)
-                        merge_chapters_switch = ui.switch('Create Merged File', value=True)
+                            ui.label('Chapter Options').classes('text-sm mt-4 mb-2').style(
+                                f'color: {COLORS["text_secondary"]}'
+                            )
+                            with ui.column().classes('w-full gap-2'):
+                                enable_chapters_switch = ui.switch('Enable Chapter-Aware Processing', value=True)
+                                save_chapters_switch = ui.switch('Save Chapters Separately', value=False)
+                                merge_chapters_switch = ui.switch('Create Merged File', value=True)
 
-                        chapter_silence_input = ui.number(
-                            label='Silence Between Chapters (s)',
-                            value=2.0,
-                            min=0.0,
-                            max=10.0,
-                            step=0.5,
-                            format='%.1f'
-                        ).classes('w-full')
+                                chapter_silence_input = ui.number(
+                                    label='Silence Between Chapters (s)',
+                                    value=2.0,
+                                    min=0.0,
+                                    max=10.0,
+                                    step=0.5,
+                                    format='%.1f'
+                                ).classes('w-full mt-2')
 
-                with ui.card().classes('maya-card'):
-                    ui.label('Metadata (Optional)').classes('maya-section-header')
+                    # Right column: Metadata
+                    with ui.column().classes('flex-1'):
+                        with ui.card().classes('maya-card h-full'):
+                            ui.label('Metadata (Optional)').classes('maya-section-header')
 
-                    with ui.row().classes('w-full gap-4'):
-                        title_input = ui.input(label='Title', placeholder='Book Title').classes('flex-1')
-                        author_input = ui.input(label='Author', placeholder='Author Name').classes('flex-1')
+                            with ui.row().classes('w-full gap-4'):
+                                title_input = ui.input(label='Title', placeholder='Book Title').classes('flex-1')
+                                author_input = ui.input(label='Author', placeholder='Author Name').classes('flex-1')
 
-                    with ui.row().classes('w-full gap-4'):
-                        album_input = ui.input(label='Album/Series', placeholder='Series Name').classes('flex-1')
-                        year_input = ui.input(label='Year', placeholder='2025').classes('flex-1')
+                            with ui.row().classes('w-full gap-4'):
+                                album_input = ui.input(label='Album/Series', placeholder='Series Name').classes('flex-1')
+                                year_input = ui.input(label='Year', placeholder='2025').classes('flex-1')
 
-                    genre_input = ui.input(label='Genre', placeholder='Fiction, Fantasy, etc.').classes('w-full')
+                            genre_input = ui.input(label='Genre', placeholder='Fiction, Fantasy, etc.').classes('w-full')
 
             # ==========================
             # QUICK TEST TAB
@@ -388,11 +411,12 @@ def create_ui():
                         f'color: {COLORS["text_secondary"]}'
                     )
 
+                    # Larger text area with more breathing room
                     test_text_input = ui.textarea(
                         label='Test Text',
                         placeholder='Enter text to synthesize...',
                         value=PREVIEW_TEXT
-                    ).classes('w-full maya-input').props('rows=6')
+                    ).classes('w-full maya-input').props('rows=12')
 
                     with ui.row().classes('w-full gap-2 mt-4'):
                         test_btn = ui.button(
