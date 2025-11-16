@@ -446,44 +446,524 @@ MayaBook/
 
 ---
 
-## 🚀 **Future Enhancements**
+## 🚀 **Planned Improvements**
 
-### Planned Features
+Based on analysis of the **VLLM streaming inference implementation** and the **official Maya1 HuggingFace quick start guide**, the following improvements could enhance MayaBook's audio quality and reliability:
 
-1. **Visual Waveform Display**
-   - Real-time audio visualization during synthesis
-   - Identify problematic chunks visually
-   - Click-to-play specific segments
+### Analysis Summary
 
-2. **Dark Mode Theme**
-   - Full dark theme support
-   - Auto-detect system theme preference
-   - Toggle in settings
+**Sources Analyzed:**
+1. [VLLM Streaming Inference Reference](https://github.com/maya-research/maya1) - Advanced streaming TTS with sliding window approach
+2. [Official Maya1 Quick Start Guide](https://huggingface.co/maya-research/maya1) - Reference implementation from Maya Research team
 
-3. **Drag-and-Drop Interface**
-   - Drop EPUB files directly into GUI
-   - Drop cover images onto preview area
-   - Batch queue via drag-and-drop
+**Key Findings:**
+- ✅ **Our implementation is validated**: SNAC unpacking, warmup trimming, and repetition_penalty all match official recommendations
+- ⭐ **Missing parameters**: `min_new_tokens=28`, `do_sample=True`, `eos_token_id`, `pad_token_id` should be added to HF path
+- 📊 **Debug logging**: Official guide includes extensive token diagnostics - we should adopt this
+- 🎨 **Prompt building**: HF path should use string-based approach (official method) instead of manual token IDs
+- 🎵 **Audio quality**: Crossfade concatenation (from VLLM) could eliminate chunk boundary artifacts
 
-4. **Desktop Notifications**
-   - Alert on batch completion
-   - Warning on errors
-   - Optional sound effects
+**Validation:**
+- Our GGUF implementation is **production-ready** and matches best practices
+- Our HF implementation needs minor updates to match official guide
+- All improvements are incremental enhancements, not critical fixes
 
-5. **Cloud Profile Sync**
-   - Sync configuration profiles across machines
-   - Share voice presets with community
-   - Optional backup to cloud storage
+---
 
-6. **Plugin System**
-   - Third-party extensions
-   - Custom audio processors
-   - Alternative TTS engines
+### Priority 1: Crossfade Audio Concatenation ⭐
 
-7. **Resume Interrupted Synthesis**
-   - Save progress state
-   - Resume from last completed chunk
-   - Useful for very long books
+**Goal:** Eliminate pops/clicks at chunk boundaries by using overlapping crossfade instead of simple silence gaps.
+
+**Current Implementation:** [audio_combine.py](core/audio_combine.py) uses fixed-duration silence gaps (default 250ms).
+
+**Proposed Implementation:**
+```python
+def concat_wavs_with_crossfade(
+    wav_paths: list[str],
+    out_path: str,
+    crossfade_ms: int = 100,
+    sr: int = 24000
+) -> str:
+    """
+    Concatenate WAV files with linear crossfade overlap.
+
+    Steps:
+    1. Read each chunk WAV file as float32 array
+    2. For chunks N and N+1:
+       - Extract last 100ms of chunk N
+       - Extract first 100ms of chunk N+1
+       - Create crossfade: fade_out(chunk_N_end) + fade_in(chunk_N+1_start)
+    3. Combine all chunks with crossfade regions
+    4. Write final concatenated audio
+
+    Benefits:
+    - Smooth transitions eliminate click artifacts
+    - Natural audio flow without artificial silence
+    - Better quality for expressive/emotional speech
+    """
+```
+
+**Implementation Details:**
+- Add new function in [core/audio_combine.py](core/audio_combine.py)
+- Use linear fade (can be upgraded to cosine fade for even smoother transitions)
+- Make crossfade duration configurable (default 100ms, range 50-200ms)
+- Add UI checkbox: "Use Crossfade" with duration slider
+- Fallback to gap-based concat if crossfade fails
+- Formula: `crossfade[i] = chunk_A[i] * (1 - fade) + chunk_B[i] * fade`
+  where `fade` ranges from 0 to 1 linearly
+
+**Files to Modify:**
+- `core/audio_combine.py` - Add `concat_wavs_with_crossfade()` function
+- `core/pipeline.py` - Add `use_crossfade` parameter, call new function if enabled
+- `ui/main_window.py` - Add crossfade checkbox and duration slider
+- `webui/app.py` - Add crossfade toggle in Output & Metadata tab
+
+**Testing:**
+```bash
+# Compare gap-based vs crossfade concatenation
+python test_cli.py --crossfade --crossfade-duration 100
+python diagnose_audio.py output/test_gap.wav output/test_crossfade.wav
+```
+
+---
+
+### Priority 2: Enhanced Documentation
+
+**Goal:** Match VLLM reference code's documentation quality with detailed docstrings and visual diagrams.
+
+**Current State:** Basic docstrings with limited technical detail.
+
+**Proposed Improvements:**
+
+**File: [core/tts_maya1_local.py](core/tts_maya1_local.py)**
+```python
+def _unpack_snac_from_7(snac_ids: list[int]):
+    """
+    Unpack 7-token SNAC frames into 3-level hierarchical codes.
+
+    This is the EXACT INVERSE of Maya1's training preprocessing.
+
+    SNAC Frame Structure (7 tokens per frame):
+    ┌───────────────────────────────────────────────────────┐
+    │ [slot0, slot1, slot2, slot3, slot4, slot5, slot6]    │
+    └───────────────────────────────────────────────────────┘
+         │      │      │      │      │      │      │
+         ▼      ▼      ▼      ▼      ▼      ▼      ▼
+        L1    L2[0]  L3[0]  L3[1]  L2[1]  L3[2]  L3[3]
+
+    Hierarchical Unpacking to [L1, L2, L3]:
+    - slot0 → L1[i]       (coarse: 1x rate,  n frames)
+    - slot1 → L2[2*i]     (medium: 2x rate, 2n codes, even indices)
+    - slot2 → L3[4*i+0]   (fine:   4x rate, 4n codes)
+    - slot3 → L3[4*i+1]   (fine:   4x rate, 4n codes)
+    - slot4 → L2[2*i+1]   (medium: 2x rate, 2n codes, odd indices)
+    - slot5 → L3[4*i+2]   (fine:   4x rate, 4n codes)
+    - slot6 → L3[4*i+3]   (fine:   4x rate, 4n codes)
+
+    Token Range:
+    - Input:  128266-156937 (vocab IDs from model)
+    - Output: 0-4095 (SNAC codes, 4096 per level)
+    - Formula: snac_code = (vocab_id - 128266) % 4096
+
+    Args:
+        snac_ids: List of SNAC token IDs (vocab space), length divisible by 7
+
+    Returns:
+        [L1, L2, L3] where len(L1)=n, len(L2)=2n, len(L3)=4n
+    """
+```
+
+**File: [core/maya1_constants.py](core/maya1_constants.py)**
+```python
+"""
+Maya1 Model Token Constants
+
+These constants define the special tokens used by the Maya1 TTS model
+for structuring prompts and controlling audio generation.
+
+Token Layout:
+    SOH_ID (128259)         - Start of Header
+    EOH_ID (128260)         - End of Header
+    SOA_ID (128261)         - Start of Audio
+    CODE_START_TOKEN_ID     - Start of SNAC codes (128257)
+    CODE_END_TOKEN_ID       - End of SNAC codes (128258, stops generation)
+    TEXT_EOT_ID (128009)    - End of text content
+
+SNAC Token Range:
+    CODE_TOKEN_OFFSET (128266) - First SNAC token ID
+    SNAC_MIN_ID (128266)       - Minimum valid SNAC token
+    SNAC_MAX_ID (156937)       - Maximum valid SNAC token
+                                 Calculated as: 128266 + (7 * 4096) - 1
+
+SNAC Frame Structure:
+    SNAC_TOKENS_PER_FRAME (7)  - Each audio frame = 7 tokens
+                                 Tokens are hierarchical: [L1, L2a, L3a, L3b, L2b, L3c, L3d]
+"""
+```
+
+**Implementation Steps:**
+1. Update all docstrings in [core/tts_maya1_local.py](core/tts_maya1_local.py)
+2. Add visual ASCII diagrams for complex logic
+3. Document token ID ranges and formulas
+4. Add "See Also" references between related functions
+5. Include example inputs/outputs in docstrings
+
+---
+
+### Priority 3: Token Validation with Diagnostic Logging ⭐
+
+**Goal:** Detect and log when model generates invalid tokens (helps debug model issues).
+
+**Validation:** The [official Maya1 quick start guide](https://huggingface.co/maya-research/maya1) includes extensive debug logging - this approach is **officially recommended**.
+
+**Current Implementation:** Silent filtering in `_extract_snac_ids()` ([tts_maya1_local.py:62-67](core/tts_maya1_local.py#L62-L67))
+
+**Proposed Implementation:**
+```python
+def _extract_snac_ids(token_ids: list[int]) -> list[int]:
+    """
+    Extract valid SNAC tokens from generation output.
+
+    Filters tokens to only include valid SNAC range (128266-156937).
+    Logs warnings if invalid tokens are encountered (helps debug model issues).
+    """
+    # Find EOS or use full sequence
+    try:
+        end = token_ids.index(CODE_END_TOKEN_ID)
+    except ValueError:
+        end = len(token_ids)
+
+    # Separate valid and invalid tokens
+    valid_snac = []
+    invalid_tokens = []
+
+    for token_id in token_ids[:end]:
+        if SNAC_MIN_ID <= token_id <= SNAC_MAX_ID:
+            valid_snac.append(token_id)
+        elif token_id != CODE_END_TOKEN_ID:
+            invalid_tokens.append(token_id)
+
+    # Log diagnostics
+    if invalid_tokens:
+        logger.warning(
+            f"Found {len(invalid_tokens)} non-SNAC tokens in generation "
+            f"(total tokens: {len(token_ids[:end])}). "
+            f"Sample invalid tokens: {invalid_tokens[:10]}"
+        )
+        logger.debug(f"Valid SNAC tokens extracted: {len(valid_snac)}")
+
+    return valid_snac
+```
+
+**Implementation Steps:**
+1. Modify `_extract_snac_ids()` in [core/tts_maya1_local.py](core/tts_maya1_local.py)
+2. Add warning logs for invalid tokens
+3. Include token distribution stats in debug logs
+4. Help users identify model configuration issues
+
+**Benefits:**
+- Early detection of prompt formatting issues
+- Identify when model "hallucinates" text tokens instead of audio
+- Better debugging for custom voice descriptions
+
+---
+
+### Priority 4: Add `min_tokens` Parameter ⭐
+
+**Goal:** Ensure minimum generation length to prevent truncated audio.
+
+**Validation:** The [official Maya1 quick start guide](https://huggingface.co/maya-research/maya1) uses `min_new_tokens=28` - this is **officially recommended**.
+
+**Current Implementation:** Only RMS quality check prevents bad audio.
+
+**Proposed Implementation:**
+```python
+def synthesize_chunk_local(
+    model_path: str,
+    text: str,
+    voice_description: str,
+    temperature: float = 0.4,
+    top_p: float = 0.9,
+    max_tokens: int = 2048,
+    min_tokens: int = 28,  # NEW: At least 4 SNAC frames (4 * 7 = 28)
+    n_ctx: int = 4096,
+    n_gpu_layers: int | None = None,
+) -> str:
+    """
+    Synthesize speech chunk with GGUF model.
+
+    Args:
+        min_tokens: Minimum tokens to generate (prevents early EOS).
+                    Default 28 = 4 SNAC frames, ~0.17s of audio.
+    """
+    # ... existing code ...
+
+    out = llm(
+        prompt=prompt_tokens,
+        max_tokens=max_tokens,
+        min_tokens=min_tokens,  # NEW: Force minimum generation
+        temperature=temperature,
+        top_p=top_p,
+        repeat_penalty=1.1,
+        echo=False,
+        seed=seed,
+    )
+```
+
+**Implementation Steps:**
+1. Add `min_tokens` parameter to `synthesize_chunk_local()` in [core/tts_maya1_local.py](core/tts_maya1_local.py)
+2. Pass to `llm()` call (check if llama-cpp-python supports `min_tokens` parameter)
+3. Add `min_new_tokens` to HF generation in [core/tts_maya1_hf.py](core/tts_maya1_hf.py) (definitely supported)
+4. Add UI slider in Advanced Settings (range: 14-56, default 28)
+5. Document relationship: 7 tokens = 1 frame ≈ 0.042s audio @ 24kHz
+
+**Benefits:**
+- Prevents model from stopping too early
+- Backup safety net to RMS quality check
+- Useful for very short chunks or edge cases
+- **Officially recommended by Maya Research team**
+
+---
+
+### Priority 5: HuggingFace Generation Parameters
+
+**Goal:** Add missing generation parameters to match official Maya1 quick start guide.
+
+**Validation:** The [official Maya1 quick start guide](https://huggingface.co/maya-research/maya1) explicitly sets these parameters.
+
+**Current Implementation:** [core/tts_maya1_hf.py](core/tts_maya1_hf.py) is missing several recommended parameters.
+
+**Proposed Implementation:**
+```python
+# In core/tts_maya1_hf.py - synthesize_chunk_hf() function
+outputs = model.generate(
+    input_ids,
+    max_new_tokens=max_tokens,
+    min_new_tokens=28,  # NEW: At least 4 SNAC frames (from Priority 4)
+    temperature=temperature,
+    top_p=top_p,
+    repetition_penalty=1.1,
+    do_sample=True,  # NEW: Explicitly enable sampling
+    eos_token_id=CODE_END_TOKEN_ID,  # NEW: Explicit EOS token (128258)
+    pad_token_id=tokenizer.pad_token_id,  # NEW: Prevent padding warnings
+)
+```
+
+**Implementation Details:**
+- `do_sample=True` - Explicitly enables sampling (currently relies on default)
+- `eos_token_id=CODE_END_TOKEN_ID` - Forces model to stop at audio end token
+- `pad_token_id=tokenizer.pad_token_id` - Prevents "pad_token_id not set" warnings
+
+**Files to Modify:**
+- `core/tts_maya1_hf.py` - Update `synthesize_chunk_hf()` function
+- `core/maya1_constants.py` - Already has CODE_END_TOKEN_ID defined
+
+**Implementation Steps:**
+1. Import CODE_END_TOKEN_ID in [core/tts_maya1_hf.py](core/tts_maya1_hf.py)
+2. Add three new parameters to `model.generate()` call
+3. Test with sample text to verify no warnings
+4. Confirm EOS token properly terminates generation
+
+**Benefits:**
+- Matches official reference implementation
+- Eliminates warning messages
+- More predictable generation behavior
+- Explicit parameters improve code clarity
+
+**Testing:**
+```bash
+# Test HF generation with new parameters
+python test_cli.py --model-type huggingface --text "Test sentence." --output output/test_hf
+# Check logs for warnings - should be none
+# Verify EOS token in generated tokens
+```
+
+---
+
+### Priority 6: Alternative Prompt Building Approach
+
+**Goal:** Adopt the official string-based prompt building method for HuggingFace path.
+
+**Validation:** The [official Maya1 quick start guide](https://huggingface.co/maya-research/maya1) uses tokenizer.decode() approach.
+
+**Current Implementation:**
+- **GGUF path** ([tts_maya1_local.py](core/tts_maya1_local.py)): Builds prompt as token ID list directly (efficient, keep as-is)
+- **HF path** ([tts_maya1_hf.py](core/tts_maya1_hf.py)): Uses similar token ID approach
+
+**Proposed Implementation (HF path only):**
+```python
+# In core/tts_maya1_hf.py - Add new helper function
+
+def _build_prompt_string(tokenizer, description: str, text: str) -> str:
+    """
+    Build formatted prompt for Maya1 using official string-based approach.
+
+    This matches the reference implementation from Maya Research.
+    Decodes special tokens to strings, builds prompt, then tokenizes.
+
+    Official format:
+    <SOH><BOS><description="voice"> text<EOT><EOH><SOA><SOS>
+
+    Args:
+        tokenizer: HuggingFace tokenizer
+        description: Voice description (e.g., "Realistic male voice...")
+        text: Text to synthesize
+
+    Returns:
+        Formatted prompt string ready for tokenization
+
+    Reference:
+        https://huggingface.co/maya-research/maya1 (Quick Start Guide)
+    """
+    # Decode special tokens to their string representations
+    soh_token = tokenizer.decode([SOH_ID])      # Start of Header
+    eoh_token = tokenizer.decode([EOH_ID])      # End of Header
+    soa_token = tokenizer.decode([SOA_ID])      # Start of Audio
+    sos_token = tokenizer.decode([CODE_START_TOKEN_ID])  # Start of Speech
+    eot_token = tokenizer.decode([TEXT_EOT_ID]) # End of Text
+    bos_token = tokenizer.bos_token             # Beginning of Sequence
+
+    # Format text with description tag
+    formatted_text = f'<description="{description.strip()}"> {text.strip()}'
+
+    # Build full prompt string
+    prompt = (
+        soh_token + bos_token + formatted_text + eot_token +
+        eoh_token + soa_token + sos_token
+    )
+
+    return prompt
+
+
+# Update synthesize_chunk_hf() to use this approach:
+def synthesize_chunk_hf(
+    model_path: str,
+    text: str,
+    voice_description: str,
+    ...
+) -> str:
+    # ... existing model loading ...
+
+    # NEW: Build prompt using official string-based method
+    prompt_string = _build_prompt_string(tokenizer, voice_description, text)
+
+    logger.debug(f"Prompt preview (first 200 chars): {repr(prompt_string[:200])}")
+    logger.debug(f"Prompt length: {len(prompt_string)} characters")
+
+    # Tokenize the prompt string
+    inputs = tokenizer(prompt_string, return_tensors="pt")
+
+    logger.debug(f"Input token count: {inputs['input_ids'].shape[1]} tokens")
+
+    # ... rest of generation code ...
+```
+
+**Comparison:**
+
+| Approach | GGUF (llama-cpp-python) | HF (transformers) Current | HF (transformers) Proposed |
+|----------|-------------------------|---------------------------|----------------------------|
+| Method | Direct token ID list | Token ID construction | String-based (official) |
+| Efficiency | ✅ High (no decode/encode) | ✅ High | ⚠️ Medium (decode + encode) |
+| Clarity | ⚠️ Manual token handling | ⚠️ Manual token handling | ✅ Matches official guide |
+| Maintainability | ⚠️ Harder to debug | ⚠️ Harder to debug | ✅ Easy to understand |
+| Recommendation | Keep as-is (efficient) | Upgrade to string-based | **Use this approach** |
+
+**Why Keep GGUF Token-Based?**
+- llama-cpp-python expects token IDs, not strings
+- No decode/re-encode overhead
+- Already working correctly
+- More efficient for GGUF use case
+
+**Why Upgrade HF to String-Based?**
+- Matches official Maya Research reference implementation
+- Easier to read and maintain
+- Better documentation (can show actual prompt string)
+- Same approach used by model creators
+- Slight performance cost is negligible for audiobook generation
+
+**Files to Modify:**
+- `core/tts_maya1_hf.py` - Add `_build_prompt_string()`, update `synthesize_chunk_hf()`
+
+**Implementation Steps:**
+1. Add `_build_prompt_string()` helper function to [core/tts_maya1_hf.py](core/tts_maya1_hf.py)
+2. Import SOH_ID, EOH_ID, SOA_ID, CODE_START_TOKEN_ID, TEXT_EOT_ID from maya1_constants
+3. Replace existing prompt building with new function call
+4. Add debug logging to show prompt string preview
+5. Test with sample text to verify identical token output
+6. Update docstrings to reference official guide
+
+**Benefits:**
+- Code matches official reference implementation
+- Easier for new developers to understand
+- Better documentation and examples
+- Future-proof (follows Maya Research's recommended approach)
+- Simpler debugging (can print actual prompt string)
+
+**Testing:**
+```bash
+# Test HF generation with new prompt building
+python test_cli.py --model-type huggingface --text "Hello world!" --output output/test_prompt
+
+# Compare token outputs (should be identical)
+# Old approach: [tokens built manually]
+# New approach: [tokens from tokenizer(prompt_string)]
+```
+
+---
+
+### Lower Priority Ideas
+
+**7. Sliding Window Streaming** (Not Applicable)
+- VLLM's streaming approach is for real-time playback
+- MayaBook does batch processing (different use case)
+- Crossfade already provides smooth transitions
+
+**8. Custom Logits Processor** (Not Feasible)
+- llama-cpp-python doesn't support custom logits processors
+- Current token filtering approach works well
+- Would require switching to VLLM (major architecture change)
+
+**9. VLLM Migration** (Future Consideration)
+- Would enable real-time streaming TTS
+- Requires full bfloat16 model (~50GB vs 15GB GGUF)
+- Higher VRAM requirements (16GB+ vs 8GB)
+- Better for server/API use cases vs desktop audiobook conversion
+
+---
+
+### Implementation Timeline
+
+**Phase 1 (Quick Wins - Based on Official Guide):**
+1. Priority 5: HuggingFace generation parameters (15 minutes)
+2. Priority 4: Add `min_tokens`/`min_new_tokens` (15 minutes)
+3. Priority 3: Enhanced token validation logging (30 minutes)
+
+**Phase 2 (Code Quality):**
+4. Priority 2: Enhanced documentation with diagrams (1-2 hours)
+5. Priority 6: Alternative prompt building for HF (45 minutes)
+
+**Phase 3 (Audio Quality):**
+6. Priority 1: Crossfade concatenation implementation (2-3 hours)
+7. Priority 1: UI controls for crossfade (1 hour)
+8. Testing and validation (2 hours)
+
+**Total Estimated Time:** 8-10 hours of development work
+
+**Recommended Order:**
+- Start with Phase 1 (validates against official guide, quick wins)
+- Phase 2 improves maintainability
+- Phase 3 provides user-facing quality improvements
+
+---
+
+### Testing Plan
+
+After implementing each improvement:
+1. **Unit Tests:** Test functions in isolation
+2. **Integration Tests:** Full pipeline with sample EPUB
+3. **Quality Comparison:** A/B test current vs improved audio
+4. **Performance Benchmarks:** Ensure no slowdown
+5. **User Testing:** Gather feedback on audio quality improvements
 
 ---
 
@@ -669,4 +1149,4 @@ If you find MayaBook useful, please consider starring the repository!
 
 **Built with ❤️ using Python, Maya1, and open-source magic**
 
-**Version:** 2.0 Unified Edition | **Last Updated:** 2025-11-16
+**Version:** 2.1 Audiobook Focus | **Last Updated:** 2025-11-16
