@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-**MayaBook** is a local EPUB-to-audiobook converter using the Maya1 TTS model. It extracts text from EPUB files, synthesizes speech using GPU-accelerated inference, and produces M4B/MP4/WAV audiobooks with professional quality.
+**MayaBook** is a local EPUB-to-audiobook converter using the Maya1 TTS model. It extracts text from EPUB files, synthesizes speech using GPU-accelerated inference, and produces M4B/WAV audiobooks with professional quality.
 
 ### Key Technologies
 - **Maya1 GGUF Model**: Text-to-speech via llama-cpp-python
@@ -31,9 +31,9 @@ EPUB File
     ↓ (parallel processing)
 [audio_combine.py] → Concatenate WAV files with gaps
     ↓
-[video_export.py] → FFmpeg: WAV + cover image → MP4
+[m4b_export.py] → FFmpeg: Create M4B with chapters & metadata (optional cover)
     ↓
-Output: book.mp4 + book.wav
+Output: book.m4b or book.wav
 ```
 
 ### Module Structure
@@ -76,14 +76,18 @@ Output: book.mp4 + book.wav
   - Configurable silence gaps between chunks
   - Diagnostic logging for chunk shapes and RMS values
 
-#### `core/video_export.py`
-- **Purpose**: FFmpeg wrapper to create MP4 with static cover
-- **Key Function**: `export_mp4(cover_image, audio_path, output_path)`
-- **FFmpeg Command**:
-  ```bash
-  ffmpeg -loop 1 -i cover.jpg -i audio.wav \
-         -c:v libx264 -c:a aac -shortest output.mp4
-  ```
+#### `core/m4b_export.py`
+- **Purpose**: FFmpeg wrapper to create M4B audiobook files with chapters and metadata
+- **Key Functions**:
+  - `create_m4b_stream()`: Stream audio to M4B with AAC encoding
+  - `write_chapter_metadata_file()`: Generate FFMETADATA1 chapter file
+  - `add_chapters_to_m4b()`: Remux M4B with chapter markers (no re-encoding)
+- **Features**: Chapter markers, metadata tags, optional cover art support
+
+#### `core/video_export.py` (DEPRECATED)
+- **Status**: Deprecated as of 2025-11-16
+- **Reason**: MayaBook now focuses on audiobook formats (M4B/WAV) instead of video files
+- Kept for backward compatibility only
 
 #### `core/pipeline.py`
 - **Purpose**: Orchestrates end-to-end conversion
@@ -213,7 +217,8 @@ project_root/
 │   ├── chunking.py          # Text → chunks
 │   ├── tts_maya1_local.py   # TTS synthesis (GGUF)
 │   ├── audio_combine.py     # WAV concatenation
-│   ├── video_export.py      # MP4 creation
+│   ├── m4b_export.py        # M4B audiobook creation
+│   ├── video_export.py      # MP4 creation (DEPRECATED)
 │   ├── pipeline.py          # Orchestration
 │   └── maya1_constants.py   # SNAC token constants
 │
@@ -237,7 +242,7 @@ project_root/
 ### Ignored Files (.gitignore)
 - `*.gguf` - Model files (too large)
 - `*.log` - Runtime logs
-- `*.wav`, `*.mp4` - Generated output
+- `*.wav`, `*.m4b`, `*.m4a` - Generated audiobook output
 - `DEVLOG*.md`, `*_SUMMARY.md` - Dev documentation
 - `.claude/`, `.vscode/` - IDE configs
 
@@ -283,7 +288,7 @@ Co-Authored-By: Claude <noreply@anthropic.com>
 ## Future Enhancements (Ideas)
 
 1. **Dynamic Token Limit**: Auto-adjust chunk size based on available token budget
-2. **Chapter Markers**: Add MP4 chapter metadata for navigation
+2. **Cover Art Embedding**: Add cover image embedding support to M4B files
 3. **Multi-Voice**: Support different voices for dialogue vs. narration
 4. **HF GPU Support**: Complete bitsandbytes integration for safetensor models
 5. **Streaming Output**: Real-time audio playback during synthesis
@@ -381,6 +386,18 @@ Audio Issue?
 
 ## Version History
 
+### v2.1 Audiobook Focus (2025-11-16) - MP4 Deprecation
+- ✅ **Deprecated MP4 Support**: Removed MP4 video export from all user-facing interfaces
+  - Focus shifted to audiobook formats (M4B and WAV)
+  - MP4 option removed from format dropdowns in both GUIs
+  - `core/video_export.py` marked as deprecated
+  - Legacy code kept for backward compatibility
+- ✅ **Cover Image Now Optional**: Cover art is optional for M4B files
+  - M4B metadata and chapters work without cover images
+  - Clearer messaging in UI about optional cover art
+- ✅ **Updated Documentation**: All references to MP4 removed or marked as deprecated
+- ✅ **Preview Generation**: Quick test/preview features now use WAV format only
+
 ### v2.0 Unified Edition (2025-11-16) - UI Unification + Enhanced Web UI
 - ✅ **Unified Tkinter GUI**: Merged `main_window.py` and `main_window_enhanced.py` into single comprehensive interface
   - All enhanced features (GPU detection, profiles, smart defaults, keyboard shortcuts)
@@ -408,11 +425,12 @@ Audio Issue?
 - ✅ Created audio analysis tool (diagnose_audio.py)
 
 ### v1.0 (2025-11-12) - Initial Release
-- Basic EPUB → MP4 pipeline
+- Basic EPUB → audiobook pipeline
 - Tkinter GUI
 - GGUF model support
 - Emotion tag support
 - CPU inference only
+- Initial MP4 video export (later deprecated in v2.1)
 
 ---
 
@@ -422,6 +440,6 @@ This is a personal project. For questions or contributions, refer to the GitHub 
 
 ---
 
-**Last Updated**: 2025-11-16
+**Last Updated**: 2025-11-16 (v2.1)
 **Maintained By**: hebbihebb
 **AI Assistant**: Claude (Anthropic)

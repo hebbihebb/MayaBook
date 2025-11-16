@@ -467,7 +467,7 @@ def create_ui():
 
                             output_format_select = ui.select(
                                 label='Output Format',
-                                options=['m4b', 'wav', 'mp4'],
+                                options=['m4b', 'wav'],
                                 value='m4b'
                             ).classes('w-full')
 
@@ -679,7 +679,6 @@ def create_ui():
                 output_dir.mkdir(exist_ok=True)
 
                 out_wav = output_dir / 'quick_test.wav'
-                out_mp4 = output_dir / 'quick_test.mp4'
 
                 # Use default cover if none provided
                 cover = state.cover_path or None
@@ -691,7 +690,7 @@ def create_ui():
                     chunk_size=int(chunk_size_input.value),
                     gap_s=gap_input.value,
                     out_wav=str(out_wav),
-                    out_mp4=str(out_mp4) if cover else None,
+                    out_mp4=None,
                     cover_image=cover,
                     temperature=temperature_slider.value,
                     top_p=top_p_slider.value,
@@ -702,8 +701,6 @@ def create_ui():
                 )
 
                 state.output_files.append(str(out_wav))
-                if out_mp4.exists():
-                    state.output_files.append(str(out_mp4))
 
                 test_status.text = '✓ Test completed'
                 test_status.style(f'color: {COLORS["success"]}')
@@ -812,7 +809,6 @@ def create_ui():
                     full_text = '\n\n'.join([text for _, text in state.chapters]) if state.chapters else ''
 
                     out_wav = str(output_base) + '.wav'
-                    out_mp4 = str(output_base) + '.mp4' if output_format_select.value == 'mp4' else None
 
                     pipeline.run_pipeline(
                         epub_text=full_text,
@@ -821,7 +817,7 @@ def create_ui():
                         chunk_size=int(chunk_size_input.value),
                         gap_s=gap_input.value,
                         out_wav=out_wav,
-                        out_mp4=out_mp4,
+                        out_mp4=None,
                         cover_image=state.cover_path,
                         temperature=temperature_slider.value,
                         top_p=top_p_slider.value,
@@ -834,8 +830,6 @@ def create_ui():
                     )
 
                     state.output_files.append(out_wav)
-                    if out_mp4 and Path(out_mp4).exists():
-                        state.output_files.append(out_mp4)
 
                 if not state.stop_flag.is_set():
                     progress_label.text = '✓ Generation completed!'
