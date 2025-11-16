@@ -6,13 +6,14 @@
 
 ## Project Overview
 
-**MayaBook** is a local EPUB-to-audiobook converter using the Maya1 TTS model. It extracts text from EPUB files, synthesizes speech using GPU-accelerated inference, and produces MP4 files with audio narration.
+**MayaBook** is a local EPUB-to-audiobook converter using the Maya1 TTS model. It extracts text from EPUB files, synthesizes speech using GPU-accelerated inference, and produces M4B/MP4/WAV audiobooks with professional quality.
 
 ### Key Technologies
 - **Maya1 GGUF Model**: Text-to-speech via llama-cpp-python
 - **SNAC Audio Codec**: Neural audio codec for waveform generation
 - **GPU Acceleration**: CUDA support via llama-cpp-python
-- **Tkinter GUI**: Cross-platform desktop interface
+- **Dual UI**: Unified Tkinter GUI + NiceGUI Web Interface
+- **M4B Export**: Chapter-aware audiobook format with FFmpeg
 
 ---
 
@@ -380,8 +381,26 @@ Audio Issue?
 
 ## Version History
 
-### v2.0 (2025-11-13) - GPU Acceleration + Bug Fixes
+### v2.0 Unified Edition (2025-11-16) - UI Unification + Enhanced Web UI
+- ✅ **Unified Tkinter GUI**: Merged `main_window.py` and `main_window_enhanced.py` into single comprehensive interface
+  - All enhanced features (GPU detection, profiles, smart defaults, keyboard shortcuts)
+  - All standard features (voice presets, voice preview, quick test, chapter selection)
+  - Settings persistence and configuration management
+- ✅ **Enhanced Web UI**: Added GPU detection and smart defaults to match desktop UI
+  - GPU status banner with real-time VRAM display
+  - Auto-Configure GPU button with optimal settings
+  - Smart Defaults button to auto-populate paths
+  - Model auto-detection dropdown
+  - Fixed Unicode encoding for Windows console
+- ✅ Documentation cleanup: Removed outdated .md files, updated README and CLAUDE.md
+- ✅ File cleanup: Removed `main_window_enhanced.py` (features merged into unified UI)
+
+### v2.0 Enhanced Edition (2025-11-13) - GPU Acceleration + Enhanced Features
 - ✅ GPU acceleration via llama-cpp-python CUDA wheels
+- ✅ Enhanced GUI with GPU detection, profiles, smart defaults, batch processing
+- ✅ Voice preset library (15+ voices) with preview generation
+- ✅ M4B chapter-aware audiobook export
+- ✅ NiceGUI-based web interface
 - ✅ Fixed EPUB paragraph extraction (non-breaking space handling)
 - ✅ Fixed KV cache state bleeding (llm.reset())
 - ✅ Fixed token limit overflow (reduced chunk size to 70 words)
@@ -403,6 +422,6 @@ This is a personal project. For questions or contributions, refer to the GitHub 
 
 ---
 
-**Last Updated**: 2025-11-13
+**Last Updated**: 2025-11-16
 **Maintained By**: hebbihebb
 **AI Assistant**: Claude (Anthropic)

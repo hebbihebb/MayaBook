@@ -1,18 +1,38 @@
+# ui/main_window.py
+"""
+Unified MayaBook GUI combining enhanced features with complete generation logic.
+
+Features:
+- GPU detection and auto-configuration
+- Configuration profiles and smart defaults
+- Voice presets and preview
+- Quick test mode (no EPUB required)
+- Chapter-aware processing with selection
+- Keyboard shortcuts
+- Enhanced progress tracking
+"""
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, ttk, simpledialog
 import threading
 import os
 import subprocess
 import sys
 import shutil
 from pathlib import Path
+from datetime import datetime
 
-# Assuming these modules exist and are correct
+# Core modules
 from core.epub_extract import extract_text, extract_chapters
 from core.pipeline import run_pipeline, run_pipeline_with_chapters
 from core.m4b_export import verify_ffmpeg_available
 from core.voice_presets import get_preset_names, get_preset_by_name
 from core.voice_preview import generate_voice_preview, is_preview_cached, get_cached_preview_path
+
+# Enhanced modules
+from core.gpu_utils import get_gpu_info, get_recommended_gguf_settings, format_vram_info
+from core.config_manager import ConfigManager, get_smart_defaults, BUILTIN_PROFILES, find_matching_cover
+
+# Chapter selection dialog
 from ui.chapter_selection_dialog import show_chapter_selection_dialog
 
 # Audio playback using pygame
@@ -23,69 +43,150 @@ try:
 except (ImportError, Exception):
     PYGAME_AVAILABLE = False
 
+
 class MainWindow(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("MayaBook Local GGUF")
-        self.geometry("850x900")  # Increased height for new sections
+        self.title("MayaBook - EPUB to Audiobook Converter")
+        self.geometry("950x1000")
 
+        # Initialize configuration manager
+        self.config_mgr = ConfigManager()
+
+        # State variables
         self.stop_generation_flag = None
         self.generation_thread = None
-        self.chapters_data = None  # Store extracted chapters (all chapters from EPUB)
-        self.selected_chapters = None  # Store user-selected chapters for processing
-        self.extracted_metadata = None  # Store extracted metadata
+        self.chapters_data = None
+        self.selected_chapters = None
+        self.extracted_metadata = None
+        self.gpu_info = None
 
+        # Create UI
+        self._create_menu()
         self._create_widgets()
         self._create_action_buttons()
-
-        # Add a logger text box
         self._create_log_widget()
-        self.log_message("Welcome to MayaBook!")
 
-        # Check FFmpeg availability on startup
+        # Load saved settings
+        self._load_saved_settings()
+
+        # Setup keyboard shortcuts
+        self._setup_shortcuts()
+
+        # Initial setup
+        self.log_message("Welcome to MayaBook!")
         self._check_ffmpeg()
+        self._detect_gpu()
+
+    def _create_menu(self):
+        """Create menu bar"""
+        menubar = tk.Menu(self)
+        self.config(menu=menubar)
+
+        # File menu
+        file_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="File", menu=file_menu)
+        file_menu.add_command(label="Load Smart Defaults", command=self._load_smart_defaults, accelerator="Ctrl+D")
+        file_menu.add_command(label="Save Settings", command=self._save_current_settings, accelerator="Ctrl+S")
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.quit, accelerator="Ctrl+Q")
+
+        # Profiles menu
+        profiles_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Profiles", menu=profiles_menu)
+        profiles_menu.add_command(label="Save Current as Profile...", command=self._save_profile_dialog)
+        profiles_menu.add_command(label="Load Profile...", command=self._load_profile_dialog)
+        profiles_menu.add_separator()
+
+        # Add builtin profiles
+        for profile_name in BUILTIN_PROFILES.keys():
+            profiles_menu.add_command(
+                label=f"Load: {profile_name}",
+                command=lambda p=profile_name: self._load_builtin_profile(p)
+            )
+
+        # Tools menu
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+        tools_menu.add_command(label="GPU Information", command=self._show_gpu_info)
+
+        # Help menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(label="About", command=self._show_about)
+        help_menu.add_command(label="Keyboard Shortcuts", command=self._show_shortcuts)
+
+    def _setup_shortcuts(self):
+        """Setup keyboard shortcuts"""
+        self.bind('<Control-d>', lambda e: self._load_smart_defaults())
+        self.bind('<Control-g>', lambda e: self._start_generation())
+        self.bind('<Control-e>', lambda e: self._extract_epub())
+        self.bind('<Control-q>', lambda e: self.quit())
+        self.bind('<Control-o>', lambda e: self._open_folder(self.output_folder.get()))
+        self.bind('<Control-s>', lambda e: self._save_current_settings())
 
     def _create_widgets(self):
-        # Create canvas with scrollbar for main content
+        # Create canvas with scrollbar
         canvas = tk.Canvas(self, borderwidth=0, highlightthickness=0)
         scrollbar = ttk.Scrollbar(self, orient="vertical", command=canvas.yview)
-
         main_frame = ttk.Frame(canvas, padding="10")
 
-        # Configure canvas
         canvas.configure(yscrollcommand=scrollbar.set)
-
-        # Grid layout
         canvas.grid(row=0, column=0, sticky="nsew")
         scrollbar.grid(row=0, column=1, sticky="ns")
 
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
 
-        # Create window in canvas
         canvas_frame = canvas.create_window((0, 0), window=main_frame, anchor="nw")
 
-        # Configure scrolling
         def on_frame_configure(event=None):
             canvas.configure(scrollregion=canvas.bbox("all"))
 
         def on_canvas_configure(event):
-            # Update the window width to match canvas width
             canvas.itemconfig(canvas_frame, width=event.width)
 
         main_frame.bind("<Configure>", on_frame_configure)
         canvas.bind("<Configure>", on_canvas_configure)
 
-        # Enable mousewheel scrolling
         def on_mousewheel(event):
             canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
         canvas.bind_all("<MouseWheel>", on_mousewheel)
 
+        row = 0
+
+        # --- GPU Status Banner ---
+        self.gpu_frame = ttk.LabelFrame(main_frame, text="GPU Status")
+        self.gpu_frame.grid(row=row, column=0, padx=5, pady=5, sticky="ew")
+        row += 1
+
+        self.gpu_status_label = ttk.Label(self.gpu_frame, text="Detecting GPU...", foreground="gray")
+        self.gpu_status_label.pack(side=tk.LEFT, padx=10, pady=5)
+
+        ttk.Button(self.gpu_frame, text="Auto-Configure", command=self._auto_configure_gpu).pack(side=tk.RIGHT, padx=5, pady=5)
+        ttk.Button(self.gpu_frame, text="Refresh", command=self._detect_gpu).pack(side=tk.RIGHT, padx=5, pady=5)
+
+        # --- Quick Actions ---
+        quick_frame = ttk.LabelFrame(main_frame, text="Quick Actions")
+        quick_frame.grid(row=row, column=0, padx=5, pady=5, sticky="ew")
+        row += 1
+
+        ttk.Button(quick_frame, text="Load Smart Defaults (Ctrl+D)", command=self._load_smart_defaults).pack(side=tk.LEFT, padx=5, pady=5)
+
+        # Profile dropdown
+        ttk.Label(quick_frame, text="Profile:").pack(side=tk.LEFT, padx=(15, 5), pady=5)
+        self.profile_var = tk.StringVar(value="Custom")
+        profile_names = ["Custom"] + list(BUILTIN_PROFILES.keys()) + self.config_mgr.get_profile_names()
+        self.profile_combo = ttk.Combobox(quick_frame, textvariable=self.profile_var, values=profile_names, state="readonly", width=25)
+        self.profile_combo.pack(side=tk.LEFT, padx=5, pady=5)
+        self.profile_combo.bind("<<ComboboxSelected>>", self._on_profile_selected)
+
         # --- File Paths ---
         file_frame = ttk.LabelFrame(main_frame, text="I/O Paths")
-        file_frame.grid(row=0, column=0, padx=5, pady=5, sticky="ew")
+        file_frame.grid(row=row, column=0, padx=5, pady=5, sticky="ew")
         file_frame.grid_columnconfigure(1, weight=1)
+        row += 1
 
         ttk.Label(file_frame, text="EPUB File:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.epub_path = tk.StringVar()
@@ -96,6 +197,7 @@ class MainWindow(tk.Tk):
         self.cover_path = tk.StringVar()
         ttk.Entry(file_frame, textvariable=self.cover_path, width=60).grid(row=1, column=1, padx=5, pady=5, sticky="ew")
         ttk.Button(file_frame, text="Browse...", command=self._select_cover).grid(row=1, column=2, padx=5, pady=5)
+        ttk.Button(file_frame, text="Auto-Find", command=self._auto_find_cover).grid(row=1, column=3, padx=5, pady=5)
 
         ttk.Label(file_frame, text="Output Folder:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
         self.output_folder = tk.StringVar(value=str(Path.home() / "MayaBook_Output"))
@@ -104,8 +206,9 @@ class MainWindow(tk.Tk):
 
         # --- Model Settings ---
         model_frame = ttk.LabelFrame(main_frame, text="Model Settings")
-        model_frame.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
+        model_frame.grid(row=row, column=0, padx=5, pady=5, sticky="ew")
         model_frame.grid_columnconfigure(1, weight=1)
+        row += 1
 
         ttk.Label(model_frame, text="Model Type:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.model_type = tk.StringVar(value="gguf")
@@ -115,11 +218,10 @@ class MainWindow(tk.Tk):
 
         ttk.Label(model_frame, text="Model Path:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
         self.model_path = tk.StringVar(value="assets/models/maya1.i1-Q5_K_M.gguf")
-        model_entry = ttk.Entry(model_frame, textvariable=self.model_path, width=60)
-        model_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Entry(model_frame, textvariable=self.model_path, width=60).grid(row=1, column=1, padx=5, pady=5, sticky="ew")
         ttk.Button(model_frame, text="Browse...", command=self._select_model).grid(row=1, column=2, padx=5, pady=5)
 
-        # GGUF-specific settings (shown/hidden based on model type)
+        # GGUF settings
         self.gguf_settings_frame = ttk.Frame(model_frame)
         self.gguf_settings_frame.grid(row=2, column=0, columnspan=3, sticky="ew")
 
@@ -131,10 +233,14 @@ class MainWindow(tk.Tk):
         self.n_gpu_layers = tk.IntVar(value=-1)
         ttk.Entry(self.gguf_settings_frame, textvariable=self.n_gpu_layers, width=10).grid(row=0, column=3, padx=5, pady=5, sticky="w")
 
-        # --- TTS Synthesis Settings ---
+        self.gpu_recommend_label = ttk.Label(self.gguf_settings_frame, text="", foreground="blue")
+        self.gpu_recommend_label.grid(row=0, column=4, padx=10, pady=5, sticky="w")
+
+        # --- TTS Settings ---
         tts_frame = ttk.LabelFrame(main_frame, text="TTS Synthesis Settings")
-        tts_frame.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
+        tts_frame.grid(row=row, column=0, padx=5, pady=5, sticky="ew")
         tts_frame.grid_columnconfigure(1, weight=1)
+        row += 1
 
         # Voice Preset Selection
         ttk.Label(tts_frame, text="Voice Preset:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
@@ -148,18 +254,17 @@ class MainWindow(tk.Tk):
         self.preview_button = ttk.Button(tts_frame, text="Preview Voice", command=self._preview_voice)
         self.preview_button.grid(row=0, column=2, padx=5, pady=5)
 
-        # Custom voice description
+        # Voice description
         ttk.Label(tts_frame, text="Voice Description:").grid(row=1, column=0, padx=5, pady=5, sticky="nw")
         self.voice_description = tk.Text(tts_frame, height=3, width=60)
         self.voice_description.grid(row=1, column=1, columnspan=2, padx=5, pady=5, sticky="ew")
 
-        # Set default voice description from preset
+        # Set default voice description
         default_preset = get_preset_by_name("Young Adult Female (Energetic)")
         if default_preset:
             self.voice_description.insert(tk.END, default_preset["description"])
         else:
-            # Fallback if preset not found
-            self.voice_description.insert(tk.END, "A bright, energetic female voice in her early 20s with excellent articulation. Her delivery is expressive and dynamic, with a contemporary American accent that's perfect for young adult fiction and romance novels.")
+            self.voice_description.insert(tk.END, "A bright, energetic female voice in her early 20s with excellent articulation.")
 
         ttk.Label(tts_frame, text="Temperature:").grid(row=2, column=0, padx=5, pady=5, sticky="w")
         self.temperature = tk.DoubleVar(value=0.45)
@@ -179,8 +284,9 @@ class MainWindow(tk.Tk):
 
         # --- Quick Test ---
         quick_test_frame = ttk.LabelFrame(main_frame, text="Quick Test (No EPUB Required)")
-        quick_test_frame.grid(row=3, column=0, padx=5, pady=5, sticky="ew")
+        quick_test_frame.grid(row=row, column=0, padx=5, pady=5, sticky="ew")
         quick_test_frame.grid_columnconfigure(0, weight=1)
+        row += 1
 
         ttk.Label(quick_test_frame, text="Enter text to quickly test TTS with current settings:",
                  foreground="gray").grid(row=0, column=0, columnspan=2, padx=5, pady=(5, 0), sticky="w")
@@ -198,8 +304,9 @@ class MainWindow(tk.Tk):
 
         # --- Output Format ---
         format_frame = ttk.LabelFrame(main_frame, text="Output Format")
-        format_frame.grid(row=4, column=0, padx=5, pady=5, sticky="ew")
+        format_frame.grid(row=row, column=0, padx=5, pady=5, sticky="ew")
         format_frame.grid_columnconfigure(1, weight=1)
+        row += 1
 
         ttk.Label(format_frame, text="Format:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.output_format = tk.StringVar(value="m4b")
@@ -213,8 +320,9 @@ class MainWindow(tk.Tk):
 
         # --- Chapter Options ---
         self.chapter_frame = ttk.LabelFrame(main_frame, text="Chapter Options")
-        self.chapter_frame.grid(row=5, column=0, padx=5, pady=5, sticky="ew")
+        self.chapter_frame.grid(row=row, column=0, padx=5, pady=5, sticky="ew")
         self.chapter_frame.grid_columnconfigure(1, weight=1)
+        row += 1
 
         self.use_chapters = tk.BooleanVar(value=True)
         ttk.Checkbutton(self.chapter_frame, text="Enable chapter-aware processing",
@@ -239,8 +347,9 @@ class MainWindow(tk.Tk):
 
         # --- Metadata ---
         self.metadata_frame = ttk.LabelFrame(main_frame, text="Metadata (Optional)")
-        self.metadata_frame.grid(row=6, column=0, padx=5, pady=5, sticky="ew")
+        self.metadata_frame.grid(row=row, column=0, padx=5, pady=5, sticky="ew")
         self.metadata_frame.grid_columnconfigure(1, weight=1)
+        row += 1
 
         ttk.Label(self.metadata_frame, text="Title:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.metadata_title = tk.StringVar()
@@ -272,8 +381,8 @@ class MainWindow(tk.Tk):
 
         # --- EPUB Preview ---
         preview_frame = ttk.LabelFrame(main_frame, text="EPUB Text Preview")
-        preview_frame.grid(row=7, column=0, padx=5, pady=5, sticky="nsew")
-        main_frame.grid_rowconfigure(7, weight=1)
+        preview_frame.grid(row=row, column=0, padx=5, pady=5, sticky="nsew")
+        main_frame.grid_rowconfigure(row, weight=1)
 
         self.text_preview = tk.Text(preview_frame, wrap=tk.WORD, height=10)
         self.text_preview_scrollbar = ttk.Scrollbar(preview_frame, orient=tk.VERTICAL, command=self.text_preview.yview)
@@ -285,20 +394,20 @@ class MainWindow(tk.Tk):
         actions_frame = ttk.Frame(self)
         actions_frame.grid(row=1, column=0, padx=10, pady=5, sticky="ew")
 
-        self.extract_button = ttk.Button(actions_frame, text="Extract EPUB", command=self._extract_epub)
+        self.extract_button = ttk.Button(actions_frame, text="Extract EPUB (Ctrl+E)", command=self._extract_epub)
         self.extract_button.pack(side=tk.LEFT, padx=5)
 
         self.select_chapters_button = ttk.Button(actions_frame, text="Select Chapters...",
                                                  command=self._select_chapters, state=tk.DISABLED)
         self.select_chapters_button.pack(side=tk.LEFT, padx=5)
 
-        self.generate_button = ttk.Button(actions_frame, text="Start Generation", command=self._start_generation)
+        self.generate_button = ttk.Button(actions_frame, text="Start Generation (Ctrl+G)", command=self._start_generation)
         self.generate_button.pack(side=tk.LEFT, padx=5)
 
         self.cancel_button = ttk.Button(actions_frame, text="Cancel", command=self._cancel_generation, state=tk.DISABLED)
         self.cancel_button.pack(side=tk.LEFT, padx=5)
 
-        self.open_folder_button = ttk.Button(actions_frame, text="Open Output Folder", command=lambda: self._open_folder(self.output_folder.get()))
+        self.open_folder_button = ttk.Button(actions_frame, text="Open Output (Ctrl+O)", command=lambda: self._open_folder(self.output_folder.get()))
         self.open_folder_button.pack(side=tk.LEFT, padx=5)
 
     def _create_log_widget(self):
@@ -321,7 +430,232 @@ class MainWindow(tk.Tk):
         self.log_text.insert(tk.END, f"{msg}\n")
         self.log_text.see(tk.END)
         self.log_text.config(state=tk.DISABLED)
-        self.update_idletasks() # Force UI update
+        self.update_idletasks()
+
+    # === GPU Detection and Configuration ===
+
+    def _detect_gpu(self):
+        """Detect GPU and display information"""
+        self.gpu_info = get_gpu_info()
+
+        if self.gpu_info['available']:
+            vram_text = format_vram_info(self.gpu_info['vram_total_mb'])
+            vram_free_text = format_vram_info(self.gpu_info['vram_free_mb'])
+            status_text = f"✓ {self.gpu_info['name']} | {vram_text} total | {vram_free_text} free"
+            self.gpu_status_label.config(text=status_text, foreground="green")
+            self.log_message(f"GPU detected: {self.gpu_info['name']}")
+        else:
+            self.gpu_status_label.config(text="⚠️ No GPU detected - CPU mode (slow)", foreground="orange")
+            self.log_message("No GPU detected. Synthesis will use CPU (very slow).")
+
+    def _auto_configure_gpu(self):
+        """Auto-configure GPU settings based on detection"""
+        model_path = self.model_path.get()
+        settings = get_recommended_gguf_settings(model_path)
+
+        self.n_gpu_layers.set(settings['n_gpu_layers'])
+        self.n_ctx.set(settings['n_ctx'])
+
+        self.log_message(f"GPU Auto-Config: {settings['explanation']}")
+
+        if settings['warnings']:
+            for warning in settings['warnings']:
+                self.log_message(f"⚠️ {warning}")
+
+        self.gpu_recommend_label.config(text="✓ Optimized")
+
+    # === Configuration Management ===
+
+    def _load_smart_defaults(self):
+        """Load smart default file paths"""
+        defaults = get_smart_defaults()
+
+        if defaults['model_path']:
+            self.model_path.set(defaults['model_path'])
+            self.log_message(f"Auto-loaded model: {Path(defaults['model_path']).name}")
+
+        if defaults['epub_path']:
+            self.epub_path.set(defaults['epub_path'])
+            self.log_message(f"Auto-loaded EPUB: {Path(defaults['epub_path']).name}")
+
+        if defaults['cover_path']:
+            self.cover_path.set(defaults['cover_path'])
+            self.log_message(f"Auto-loaded cover: {Path(defaults['cover_path']).name}")
+
+        if defaults['output_folder']:
+            self.output_folder.set(defaults['output_folder'])
+
+        self.log_message("✓ Smart defaults loaded")
+
+    def _auto_find_cover(self):
+        """Automatically find cover matching EPUB"""
+        epub_path = self.epub_path.get()
+        if not epub_path:
+            messagebox.showwarning("No EPUB", "Please select an EPUB file first.")
+            return
+
+        cover = find_matching_cover(epub_path)
+        if cover:
+            self.cover_path.set(cover)
+            self.log_message(f"✓ Found matching cover: {Path(cover).name}")
+        else:
+            messagebox.showinfo("No Cover Found", "Could not find a matching cover image.")
+
+    def _save_current_settings(self):
+        """Save current settings to config"""
+        settings = self._get_current_settings()
+        self.config_mgr.save_gui_settings(settings)
+
+        # Update recent files
+        if self.epub_path.get():
+            self.config_mgr.add_recent_file('epubs', self.epub_path.get())
+        if self.cover_path.get():
+            self.config_mgr.add_recent_file('covers', self.cover_path.get())
+        if self.model_path.get():
+            self.config_mgr.add_recent_file('models', self.model_path.get())
+
+        self.log_message("✓ Settings saved")
+
+    def _load_saved_settings(self):
+        """Load saved settings from config"""
+        settings = self.config_mgr.get_gui_settings()
+        self._apply_settings(settings)
+
+        # Load last used paths
+        last_epub = self.config_mgr.get_last_used('epub_path')
+        if last_epub:
+            self.epub_path.set(last_epub)
+
+        last_cover = self.config_mgr.get_last_used('cover_path')
+        if last_cover:
+            self.cover_path.set(last_cover)
+
+        last_model = self.config_mgr.get_last_used('model_path')
+        if last_model:
+            self.model_path.set(last_model)
+
+        last_output = self.config_mgr.get_last_used('output_folder')
+        if last_output:
+            self.output_folder.set(last_output)
+
+    def _get_current_settings(self) -> dict:
+        """Get current GUI settings as dict"""
+        return {
+            'model_type': self.model_type.get(),
+            'n_ctx': self.n_ctx.get(),
+            'n_gpu_layers': self.n_gpu_layers.get(),
+            'temperature': self.temperature.get(),
+            'top_p': self.top_p.get(),
+            'chunk_size': self.chunk_size.get(),
+            'gap_size': self.gap_size.get(),
+            'output_format': self.output_format.get(),
+            'use_chapters': self.use_chapters.get(),
+            'save_separately': self.save_separately.get(),
+            'merge_chapters': self.merge_chapters.get(),
+            'chapter_silence': self.chapter_silence.get(),
+            'voice_description': self.voice_description.get("1.0", tk.END).strip(),
+        }
+
+    def _apply_settings(self, settings: dict):
+        """Apply settings dict to GUI"""
+        if 'model_type' in settings:
+            self.model_type.set(settings['model_type'])
+        if 'n_ctx' in settings:
+            self.n_ctx.set(settings['n_ctx'])
+        if 'n_gpu_layers' in settings:
+            self.n_gpu_layers.set(settings['n_gpu_layers'])
+        if 'temperature' in settings:
+            self.temperature.set(settings['temperature'])
+        if 'top_p' in settings:
+            self.top_p.set(settings['top_p'])
+        if 'chunk_size' in settings:
+            self.chunk_size.set(settings['chunk_size'])
+        if 'gap_size' in settings:
+            self.gap_size.set(settings['gap_size'])
+        if 'output_format' in settings:
+            self.output_format.set(settings['output_format'])
+        if 'use_chapters' in settings:
+            self.use_chapters.set(settings['use_chapters'])
+        if 'save_separately' in settings:
+            self.save_separately.set(settings['save_separately'])
+        if 'merge_chapters' in settings:
+            self.merge_chapters.set(settings['merge_chapters'])
+        if 'chapter_silence' in settings:
+            self.chapter_silence.set(settings['chapter_silence'])
+        if 'voice_description' in settings:
+            self.voice_description.delete("1.0", tk.END)
+            self.voice_description.insert("1.0", settings['voice_description'])
+
+    def _save_profile_dialog(self):
+        """Dialog to save current settings as profile"""
+        name = simpledialog.askstring("Save Profile", "Enter profile name:")
+        if name:
+            settings = self._get_current_settings()
+            self.config_mgr.save_profile(name, settings)
+            self.log_message(f"✓ Profile '{name}' saved")
+
+            # Update profile dropdown
+            profile_names = ["Custom"] + list(BUILTIN_PROFILES.keys()) + self.config_mgr.get_profile_names()
+            self.profile_combo.config(values=profile_names)
+
+    def _load_profile_dialog(self):
+        """Dialog to load a profile"""
+        profiles = self.config_mgr.get_profile_names()
+        if not profiles:
+            messagebox.showinfo("No Profiles", "No saved profiles found.")
+            return
+
+        # Create selection dialog
+        dialog = tk.Toplevel(self)
+        dialog.title("Load Profile")
+        dialog.geometry("300x200")
+
+        ttk.Label(dialog, text="Select profile:").pack(padx=10, pady=10)
+
+        listbox = tk.Listbox(dialog)
+        for profile in profiles:
+            listbox.insert(tk.END, profile)
+        listbox.pack(padx=10, pady=10, fill=tk.BOTH, expand=True)
+
+        def load_selected():
+            selection = listbox.curselection()
+            if selection:
+                profile_name = listbox.get(selection[0])
+                profile = self.config_mgr.load_profile(profile_name)
+                if profile:
+                    self._apply_settings(profile)
+                    self.profile_var.set(profile_name)
+                    self.log_message(f"✓ Loaded profile: {profile_name}")
+                dialog.destroy()
+
+        ttk.Button(dialog, text="Load", command=load_selected).pack(pady=5)
+
+    def _load_builtin_profile(self, profile_name: str):
+        """Load a builtin profile"""
+        if profile_name in BUILTIN_PROFILES:
+            settings = BUILTIN_PROFILES[profile_name]
+            self._apply_settings(settings)
+            self.profile_var.set(profile_name)
+            self.log_message(f"✓ Loaded builtin profile: {profile_name}")
+
+    def _on_profile_selected(self, event=None):
+        """Handle profile selection from dropdown"""
+        profile_name = self.profile_var.get()
+
+        if profile_name == "Custom":
+            return
+
+        # Try builtin profiles first
+        if profile_name in BUILTIN_PROFILES:
+            self._load_builtin_profile(profile_name)
+        else:
+            # Try user profiles
+            profile = self.config_mgr.load_profile(profile_name)
+            if profile:
+                self._apply_settings(profile)
+                self.log_message(f"✓ Loaded profile: {profile_name}")
+
+    # === File Selection ===
 
     def _select_epub(self):
         path = filedialog.askopenfilename(filetypes=[("EPUB files", "*.epub")])
@@ -361,6 +695,123 @@ class MainWindow(tk.Tk):
             self.gguf_settings_frame.grid_remove()
             self.model_path.set("assets/models/maya1_4bit_safetensor")
         self.log_message(f"Model type changed to: {model_type}")
+
+    # === Voice Presets ===
+
+    def _on_voice_preset_change(self, event=None):
+        """Handle voice preset selection - update voice description text."""
+        preset_name = self.voice_preset.get()
+        preset = get_preset_by_name(preset_name)
+
+        if preset:
+            # Update the voice description text box
+            self.voice_description.delete("1.0", tk.END)
+            self.voice_description.insert(tk.END, preset["description"])
+            self.log_message(f"Voice preset changed to: {preset_name}")
+
+            # Show preset details
+            details = f"{preset.get('age', 'N/A')}, {preset.get('accent', 'N/A')}"
+            self.log_message(f"  Details: {details}")
+        else:
+            self.log_message(f"Warning: Preset '{preset_name}' not found")
+
+    def _preview_voice(self):
+        """Generate and play a voice preview sample."""
+        model_path = self.model_path.get()
+        if not model_path or not os.path.exists(model_path):
+            messagebox.showerror("Error", "Please select a valid model file first.")
+            return
+
+        # Check if model is too small (placeholder)
+        model_size = os.path.getsize(model_path)
+        if model_size < 1_000_000:
+            messagebox.showerror("Error",
+                f"Model file appears to be a placeholder ({model_size:,} bytes).\n"
+                "Please download the full model file first.")
+            return
+
+        voice_desc = self.voice_description.get("1.0", tk.END).strip()
+        if not voice_desc:
+            messagebox.showerror("Error", "Voice description is empty.")
+            return
+
+        # Get synthesis parameters
+        temperature = self.temperature.get()
+        top_p = self.top_p.get()
+        n_ctx = self.n_ctx.get()
+        n_gpu_layers = self.n_gpu_layers.get()
+
+        # Check if already cached
+        cached_path = get_cached_preview_path(voice_desc, model_path, temperature, top_p)
+        if cached_path:
+            self.log_message("Using cached voice preview...")
+            self._play_preview_audio(cached_path)
+            return
+
+        # Generate preview in background thread
+        self.log_message("Generating voice preview (this may take 10-30 seconds)...")
+        self.preview_button.config(state=tk.DISABLED, text="Generating...")
+
+        def generate_thread():
+            try:
+                preview_path = generate_voice_preview(
+                    voice_description=voice_desc,
+                    model_path=model_path,
+                    temperature=temperature,
+                    top_p=top_p,
+                    n_ctx=n_ctx,
+                    n_gpu_layers=n_gpu_layers,
+                )
+                self.after(0, self._preview_generated_success, preview_path)
+            except Exception as e:
+                self.after(0, self._preview_generated_error, str(e))
+
+        thread = threading.Thread(target=generate_thread, daemon=True)
+        thread.start()
+
+    def _preview_generated_success(self, preview_path):
+        """Handle successful preview generation."""
+        self.preview_button.config(state=tk.NORMAL, text="Preview Voice")
+        self.log_message("Voice preview generated successfully!")
+        self._play_preview_audio(preview_path)
+
+    def _preview_generated_error(self, error_msg):
+        """Handle preview generation error."""
+        self.preview_button.config(state=tk.NORMAL, text="Preview Voice")
+        self.log_message(f"Preview generation failed: {error_msg}")
+        messagebox.showerror("Preview Error", f"Failed to generate voice preview:\n{error_msg}")
+
+    def _play_preview_audio(self, audio_path):
+        """Play a preview audio file using pygame."""
+        if not PYGAME_AVAILABLE:
+            self.log_message("Audio playback not available (pygame not installed)")
+            messagebox.showinfo("Preview Ready",
+                f"Voice preview generated:\n{audio_path}\n\n"
+                "Install 'pygame' package for in-app playback.")
+            return
+
+        try:
+            # Load and play the audio file using pygame
+            pygame.mixer.music.load(audio_path)
+            pygame.mixer.music.play()
+
+            # Get duration for logging
+            import soundfile as sf
+            audio_data, sample_rate = sf.read(audio_path)
+            duration = len(audio_data) / sample_rate
+
+            self.log_message(f"Playing voice preview ({duration:.1f}s)...")
+            messagebox.showinfo("Preview Playing",
+                f"Voice preview is playing ({duration:.1f}s)\n\n"
+                f"Preview file saved at:\n{audio_path}")
+
+        except Exception as e:
+            self.log_message(f"Audio playback error: {e}")
+            messagebox.showerror("Playback Error",
+                f"Failed to play audio:\n{e}\n\n"
+                f"Preview file saved at:\n{audio_path}")
+
+    # === EPUB Extraction ===
 
     def _extract_epub(self):
         epub_path = self.epub_path.get()
@@ -472,6 +923,142 @@ class MainWindow(tk.Tk):
             if self.selected_chapters is None:
                 self.selected_chapters = self.chapters_data
                 self.log_message("No selection made - will process all chapters")
+
+    # === Quick Test ===
+
+    def _quick_test_generation(self):
+        """Quick test generation - bypasses EPUB workflow."""
+        # --- Validate inputs ---
+        model_path = self.model_path.get()
+        if not model_path:
+            messagebox.showerror("Error", "Please select a model file.")
+            return
+
+        if not os.path.exists(model_path):
+            messagebox.showerror("Model Not Found",
+                f"Model file not found:\n{model_path}\n\n"
+                "Please download maya1.i1-Q5_K_M.gguf from:\n"
+                "https://huggingface.co/maya-research/maya1")
+            return
+
+        # Check if model file is too small (likely a placeholder)
+        model_size = os.path.getsize(model_path)
+        if model_size < 1_000_000:  # Less than 1MB is suspicious
+            response = messagebox.askyesno("Warning: Small Model File",
+                f"The model file is only {model_size:,} bytes.\n"
+                "This appears to be a placeholder, not a real model.\n\n"
+                "Synthesis will likely fail. Continue anyway?")
+            if not response:
+                return
+
+        # Get test text
+        test_text = self.quick_test_text.get("1.0", tk.END).strip()
+        if not test_text:
+            messagebox.showerror("Error", "Please enter some test text.")
+            return
+
+        # Get output directory
+        output_dir = self.output_folder.get()
+        if not output_dir:
+            output_dir = str(Path.home() / "MayaBook_Output")
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+        # Create quick test output path with timestamp to avoid file locking issues
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_wav = str(Path(output_dir) / f"quick_test_{timestamp}.wav")
+
+        # Stop any playing audio to prevent file locking issues
+        if PYGAME_AVAILABLE:
+            try:
+                pygame.mixer.music.stop()
+                pygame.mixer.music.unload()
+            except:
+                pass
+
+        # Disable button during generation
+        self.quick_test_button.config(state=tk.DISABLED, text="Generating...")
+        self.log_message("Starting quick test generation...")
+
+        # Run in background thread
+        def quick_test_thread():
+            try:
+                from core.chunking import chunk_text
+                from core.audio_combine import concat_wavs
+
+                # Get synthesis parameters
+                voice_desc = self.voice_description.get("1.0", tk.END).strip()
+                chunk_size = self.chunk_size.get()
+                gap_s = self.gap_size.get()
+                temperature = self.temperature.get()
+                top_p = self.top_p.get()
+                n_ctx = self.n_ctx.get()
+                n_gpu_layers = self.n_gpu_layers.get()
+                model_type = self.model_type.get()
+
+                # Import the appropriate TTS module based on model type
+                if model_type == "gguf":
+                    from core.tts_maya1_local import synthesize_chunk_local as synthesize_fn
+                else:
+                    from core.tts_maya1_hf import synthesize_chunk_hf as synthesize_fn
+
+                # Chunk the text
+                chunks = chunk_text(test_text, max_words=chunk_size)
+                self.log_message(f"Text split into {len(chunks)} chunk(s)")
+
+                # Synthesize each chunk
+                wav_paths = []
+                for i, chunk in enumerate(chunks, 1):
+                    self.log_message(f"Synthesizing chunk {i}/{len(chunks)}...")
+
+                    if model_type == "gguf":
+                        wav_path = synthesize_fn(
+                            model_path=model_path,
+                            text=chunk,
+                            voice_description=voice_desc,
+                            temperature=temperature,
+                            top_p=top_p,
+                            n_ctx=n_ctx,
+                            n_gpu_layers=n_gpu_layers,
+                            max_tokens=2500,
+                        )
+                    else:  # huggingface
+                        wav_path = synthesize_fn(
+                            text=chunk,
+                            voice_description=voice_desc,
+                            model_path=model_path,
+                            temperature=temperature,
+                            top_p=top_p,
+                        )
+
+                    wav_paths.append(wav_path)
+
+                # Concatenate chunks
+                self.log_message("Combining audio chunks...")
+                concat_wavs(wav_paths, out_wav, gap_seconds=gap_s)
+
+                self.after(0, self._quick_test_complete, out_wav)
+
+            except Exception as e:
+                self.after(0, self._quick_test_failed, str(e))
+
+        thread = threading.Thread(target=quick_test_thread, daemon=True)
+        thread.start()
+
+    def _quick_test_complete(self, wav_path):
+        """Handle successful quick test completion."""
+        self.quick_test_button.config(state=tk.NORMAL, text="Generate Quick Test Audio")
+        self.log_message(f"Quick test complete! Saved to: {wav_path}")
+
+        # Try to play the audio
+        self._play_preview_audio(wav_path)
+
+    def _quick_test_failed(self, error_msg):
+        """Handle quick test failure."""
+        self.quick_test_button.config(state=tk.NORMAL, text="Generate Quick Test Audio")
+        self.log_message(f"Quick test failed: {error_msg}")
+        messagebox.showerror("Quick Test Error", f"Failed to generate quick test:\n{error_msg}")
+
+    # === Main Generation ===
 
     def _start_generation(self):
         # --- Validate inputs ---
@@ -615,140 +1202,6 @@ class MainWindow(tk.Tk):
             )
             self.generation_thread.start()
 
-    def _quick_test_generation(self):
-        """Quick test generation - bypasses EPUB workflow."""
-        # --- Validate inputs ---
-        model_path = self.model_path.get()
-        if not model_path:
-            messagebox.showerror("Error", "Please select a model file.")
-            return
-
-        if not os.path.exists(model_path):
-            messagebox.showerror("Model Not Found",
-                f"Model file not found:\n{model_path}\n\n"
-                "Please download maya1.i1-Q5_K_M.gguf from:\n"
-                "https://huggingface.co/maya-research/maya1")
-            return
-
-        # Check if model file is too small (likely a placeholder)
-        model_size = os.path.getsize(model_path)
-        if model_size < 1_000_000:  # Less than 1MB is suspicious
-            response = messagebox.askyesno("Warning: Small Model File",
-                f"The model file is only {model_size:,} bytes.\n"
-                "This appears to be a placeholder, not a real model.\n\n"
-                "Synthesis will likely fail. Continue anyway?")
-            if not response:
-                return
-
-        # Get test text
-        test_text = self.quick_test_text.get("1.0", tk.END).strip()
-        if not test_text:
-            messagebox.showerror("Error", "Please enter some test text.")
-            return
-
-        # Get output directory
-        output_dir = self.output_folder.get()
-        if not output_dir:
-            output_dir = str(Path.home() / "MayaBook_Output")
-        Path(output_dir).mkdir(parents=True, exist_ok=True)
-
-        # Create quick test output path with timestamp to avoid file locking issues
-        from datetime import datetime
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_wav = str(Path(output_dir) / f"quick_test_{timestamp}.wav")
-
-        # Stop any playing audio to prevent file locking issues
-        if PYGAME_AVAILABLE:
-            try:
-                pygame.mixer.music.stop()
-                pygame.mixer.music.unload()
-            except:
-                pass
-
-        # Disable button during generation
-        self.quick_test_button.config(state=tk.DISABLED, text="Generating...")
-        self.log_message("Starting quick test generation...")
-
-        # Run in background thread
-        def quick_test_thread():
-            try:
-                from core.chunking import chunk_text
-                from core.audio_combine import concat_wavs
-                import tempfile
-
-                # Get synthesis parameters
-                voice_desc = self.voice_description.get("1.0", tk.END).strip()
-                chunk_size = self.chunk_size.get()
-                gap_s = self.gap_size.get()
-                temperature = self.temperature.get()
-                top_p = self.top_p.get()
-                n_ctx = self.n_ctx.get()
-                n_gpu_layers = self.n_gpu_layers.get()
-                model_type = self.model_type.get()
-
-                # Import the appropriate TTS module based on model type
-                if model_type == "gguf":
-                    from core.tts_maya1_local import synthesize_chunk_local as synthesize_fn
-                else:
-                    from core.tts_maya1_hf import synthesize_chunk_hf as synthesize_fn
-
-                # Chunk the text
-                chunks = chunk_text(test_text, max_words=chunk_size)
-                self.log_message(f"Text split into {len(chunks)} chunk(s)")
-
-                # Synthesize each chunk
-                wav_paths = []
-                for i, chunk in enumerate(chunks, 1):
-                    self.log_message(f"Synthesizing chunk {i}/{len(chunks)}...")
-
-                    if model_type == "gguf":
-                        wav_path = synthesize_fn(
-                            model_path=model_path,
-                            text=chunk,
-                            voice_description=voice_desc,
-                            temperature=temperature,
-                            top_p=top_p,
-                            n_ctx=n_ctx,
-                            n_gpu_layers=n_gpu_layers,
-                            max_tokens=2500,
-                        )
-                    else:  # huggingface
-                        wav_path = synthesize_fn(
-                            text=chunk,
-                            voice_description=voice_desc,
-                            model_path=model_path,
-                            temperature=temperature,
-                            top_p=top_p,
-                        )
-
-                    wav_paths.append(wav_path)
-
-                # Concatenate chunks
-                self.log_message("Combining audio chunks...")
-                concat_wavs(wav_paths, out_wav, gap_seconds=gap_s)
-
-                self.after(0, self._quick_test_complete, out_wav)
-
-            except Exception as e:
-                self.after(0, self._quick_test_failed, str(e))
-
-        thread = threading.Thread(target=quick_test_thread, daemon=True)
-        thread.start()
-
-    def _quick_test_complete(self, wav_path):
-        """Handle successful quick test completion."""
-        self.quick_test_button.config(state=tk.NORMAL, text="Generate Quick Test Audio")
-        self.log_message(f"Quick test complete! Saved to: {wav_path}")
-
-        # Try to play the audio
-        self._play_preview_audio(wav_path)
-
-    def _quick_test_failed(self, error_msg):
-        """Handle quick test failure."""
-        self.quick_test_button.config(state=tk.NORMAL, text="Generate Quick Test Audio")
-        self.log_message(f"Quick test failed: {error_msg}")
-        messagebox.showerror("Quick Test Error", f"Failed to generate quick test:\n{error_msg}")
-
     def _run_chapter_pipeline_thread(self, chapters, metadata, model_path, voice_desc,
                                     chunk_size, gap_s, output_base, cover_path, output_format,
                                     save_separately, merge_chapters, chapter_silence,
@@ -846,7 +1299,7 @@ class MainWindow(tk.Tk):
         if self.stop_generation_flag:
             self.stop_generation_flag.set()
             self.log_message("Cancellation requested...")
-            self.cancel_button.config(state=tk.DISABLED) # Prevent multiple clicks
+            self.cancel_button.config(state=tk.DISABLED)
 
     def _reset_ui_state(self):
         self.generate_button.config(state=tk.NORMAL)
@@ -895,118 +1348,58 @@ class MainWindow(tk.Tk):
         except OSError as e:
             messagebox.showerror("Error", f"Failed to open folder:\n{e}")
 
-    def _on_voice_preset_change(self, event=None):
-        """Handle voice preset selection - update voice description text."""
-        preset_name = self.voice_preset.get()
-        preset = get_preset_by_name(preset_name)
+    # === Dialog Windows ===
 
-        if preset:
-            # Update the voice description text box
-            self.voice_description.delete("1.0", tk.END)
-            self.voice_description.insert(tk.END, preset["description"])
-            self.log_message(f"Voice preset changed to: {preset_name}")
+    def _show_gpu_info(self):
+        """Show detailed GPU information"""
+        if not self.gpu_info:
+            self._detect_gpu()
 
-            # Show preset details
-            details = f"{preset.get('age', 'N/A')}, {preset.get('accent', 'N/A')}"
-            self.log_message(f"  Details: {details}")
-        else:
-            self.log_message(f"Warning: Preset '{preset_name}' not found")
+        info_text = f"""GPU Information:
 
-    def _preview_voice(self):
-        """Generate and play a voice preview sample."""
-        model_path = self.model_path.get()
-        if not model_path or not os.path.exists(model_path):
-            messagebox.showerror("Error", "Please select a valid model file first.")
-            return
+Name: {self.gpu_info['name']}
+Available: {self.gpu_info['available']}
+CUDA Available: {self.gpu_info['cuda_available']}
+Driver Version: {self.gpu_info['driver_version']}
 
-        # Check if model is too small (placeholder)
-        model_size = os.path.getsize(model_path)
-        if model_size < 1_000_000:
-            messagebox.showerror("Error",
-                f"Model file appears to be a placeholder ({model_size:,} bytes).\n"
-                "Please download the full model file first.")
-            return
+VRAM:
+  Total: {format_vram_info(self.gpu_info['vram_total_mb'])}
+  Free: {format_vram_info(self.gpu_info['vram_free_mb'])}
+  Used: {format_vram_info(self.gpu_info['vram_used_mb'])}
+"""
+        messagebox.showinfo("GPU Information", info_text)
 
-        voice_desc = self.voice_description.get("1.0", tk.END).strip()
-        if not voice_desc:
-            messagebox.showerror("Error", "Voice description is empty.")
-            return
+    def _show_about(self):
+        """Show about dialog"""
+        about_text = """MayaBook - EPUB to Audiobook Converter
 
-        # Get synthesis parameters
-        temperature = self.temperature.get()
-        top_p = self.top_p.get()
-        n_ctx = self.n_ctx.get()
-        n_gpu_layers = self.n_gpu_layers.get()
+A local EPUB-to-audiobook converter using Maya1 TTS.
 
-        # Check if already cached
-        cached_path = get_cached_preview_path(voice_desc, model_path, temperature, top_p)
-        if cached_path:
-            self.log_message("Using cached voice preview...")
-            self._play_preview_audio(cached_path)
-            return
+Features:
+• GPU acceleration
+• Voice presets and preview
+• Chapter-aware processing
+• M4B audiobook export with metadata
+• Configuration profiles
+• Smart defaults
 
-        # Generate preview in background thread
-        self.log_message("Generating voice preview (this may take 10-30 seconds)...")
-        self.preview_button.config(state=tk.DISABLED, text="Generating...")
+Version: 2.0 Unified Edition
+"""
+        messagebox.showinfo("About MayaBook", about_text)
 
-        def generate_thread():
-            try:
-                preview_path = generate_voice_preview(
-                    voice_description=voice_desc,
-                    model_path=model_path,
-                    temperature=temperature,
-                    top_p=top_p,
-                    n_ctx=n_ctx,
-                    n_gpu_layers=n_gpu_layers,
-                )
-                self.after(0, self._preview_generated_success, preview_path)
-            except Exception as e:
-                self.after(0, self._preview_generated_error, str(e))
+    def _show_shortcuts(self):
+        """Show keyboard shortcuts"""
+        shortcuts_text = """Keyboard Shortcuts:
 
-        thread = threading.Thread(target=generate_thread, daemon=True)
-        thread.start()
+Ctrl+D - Load Smart Defaults
+Ctrl+E - Extract EPUB
+Ctrl+G - Start Generation
+Ctrl+O - Open Output Folder
+Ctrl+S - Save Settings
+Ctrl+Q - Quit
+"""
+        messagebox.showinfo("Keyboard Shortcuts", shortcuts_text)
 
-    def _preview_generated_success(self, preview_path):
-        """Handle successful preview generation."""
-        self.preview_button.config(state=tk.NORMAL, text="Preview Voice")
-        self.log_message("Voice preview generated successfully!")
-        self._play_preview_audio(preview_path)
-
-    def _preview_generated_error(self, error_msg):
-        """Handle preview generation error."""
-        self.preview_button.config(state=tk.NORMAL, text="Preview Voice")
-        self.log_message(f"Preview generation failed: {error_msg}")
-        messagebox.showerror("Preview Error", f"Failed to generate voice preview:\n{error_msg}")
-
-    def _play_preview_audio(self, audio_path):
-        """Play a preview audio file using pygame."""
-        if not PYGAME_AVAILABLE:
-            self.log_message("Audio playback not available (pygame not installed)")
-            messagebox.showinfo("Preview Ready",
-                f"Voice preview generated:\n{audio_path}\n\n"
-                "Install 'pygame' package for in-app playback.")
-            return
-
-        try:
-            # Load and play the audio file using pygame
-            pygame.mixer.music.load(audio_path)
-            pygame.mixer.music.play()
-
-            # Get duration for logging
-            import soundfile as sf
-            audio_data, sample_rate = sf.read(audio_path)
-            duration = len(audio_data) / sample_rate
-
-            self.log_message(f"Playing voice preview ({duration:.1f}s)...")
-            messagebox.showinfo("Preview Playing",
-                f"Voice preview is playing ({duration:.1f}s)\n\n"
-                f"Preview file saved at:\n{audio_path}")
-
-        except Exception as e:
-            self.log_message(f"Audio playback error: {e}")
-            messagebox.showerror("Playback Error",
-                f"Failed to play audio:\n{e}\n\n"
-                f"Preview file saved at:\n{audio_path}")
 
 if __name__ == "__main__":
     app = MainWindow()

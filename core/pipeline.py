@@ -167,13 +167,18 @@ def run_pipeline(
         logger.error(f"Error concatenating audio: {e}", exc_info=True)
         raise
 
-    logger.info("Creating video from audio and cover image...")
-    try:
-        final_mp4_path = export_mp4(cover_image, final_wav_path, out_mp4)
-        logger.info(f"Final video saved: {final_mp4_path}")
-    except Exception as e:
-        logger.error(f"Error creating video: {e}", exc_info=True)
-        raise
+    # Only create MP4 if output path is specified
+    final_mp4_path = None
+    if out_mp4:
+        logger.info("Creating video from audio and cover image...")
+        try:
+            final_mp4_path = export_mp4(cover_image, final_wav_path, out_mp4)
+            logger.info(f"Final video saved: {final_mp4_path}")
+        except Exception as e:
+            logger.error(f"Error creating video: {e}", exc_info=True)
+            raise
+    else:
+        logger.info("Skipping MP4 creation (no output path specified)")
 
     logger.info("="*60)
     logger.info("Pipeline completed successfully!")

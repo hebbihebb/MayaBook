@@ -14,7 +14,12 @@ Usage:
 
 import argparse
 import sys
+import os
 from pathlib import Path
+
+# Fix Windows console encoding for emojis (set before any print statements)
+if sys.platform == 'win32':
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -61,18 +66,18 @@ The web interface will be accessible at:
 
     args = parser.parse_args()
 
-    # Banner
+    # Banner (using ASCII for Windows compatibility)
     print('=' * 60)
-    print('🎙️  MayaBook Web UI')
+    print('MayaBook Web UI')
     print('=' * 60)
     print(f'Starting web interface on {args.host}:{args.port}')
     print()
     print('Access the UI at:')
     if args.host == '0.0.0.0':
-        print(f'  • Local:   http://localhost:{args.port}')
-        print(f'  • Network: http://<your-ip>:{args.port}')
+        print(f'  - Local:   http://localhost:{args.port}')
+        print(f'  - Network: http://<your-ip>:{args.port}')
     else:
-        print(f'  • URL: http://{args.host}:{args.port}')
+        print(f'  - URL: http://{args.host}:{args.port}')
     print()
     print('Press Ctrl+C to stop the server')
     print('=' * 60)
@@ -91,5 +96,5 @@ if __name__ == '__main__':
     try:
         main()
     except KeyboardInterrupt:
-        print('\n\n👋 MayaBook Web UI stopped')
+        print('\n\nMayaBook Web UI stopped')
         sys.exit(0)

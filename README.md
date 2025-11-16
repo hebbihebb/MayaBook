@@ -7,8 +7,8 @@ It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model 
 
 ![MayaBook GUI](screenshot.jpg)
 
-**Version:** 2.0 Enhanced Edition
-**Status:** Works mostly...
+**Version:** 2.0 Unified Edition
+**Status:** Production Ready ✓
 
 ---
 
@@ -74,41 +74,48 @@ It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model 
 
 ---
 
-## 🖥️ **GUI Features**
+## 🖥️ **User Interfaces**
 
-### Standard Edition (`app.py`)
+MayaBook offers two powerful interfaces to suit your workflow:
+
+### Desktop GUI (`app.py`) - **Recommended**
+**Unified Tkinter interface combining all features:**
+
+**Core Features:**
 * **File Selection:** EPUB, cover image, model, output folder pickers
 * **Voice Presets:** 15+ professional voices with instant preview playback
-* **GGUF Configuration:** Context size, GPU layers
-* **Synthesis Controls:** Temperature, top-p, chunk size, silence gaps
-* **Real-time Progress:** Progress bar with completion percentage
-* **Threaded Execution:** Non-blocking UI with cancel support
+* **Quick Test Mode:** Test TTS without EPUB for rapid iteration
+* **Chapter Selection:** Visual dialog to choose specific chapters
+* **Real-time Progress:** Progress bar with chunk-level tracking
 * **M4B Export:** Chapter-aware audiobook format with metadata
+* **Audio Playback:** In-app voice preview with pygame
 
-### Enhanced Edition (`ui/main_window_enhanced.py`)
-**All standard features plus:**
-* **GPU Auto-Detection:** Real-time VRAM monitoring with optimal settings
-* **Smart File Detection:** Auto-locate models, EPUBs, and cover images
+**Enhanced Features:**
+* **GPU Auto-Detection:** Real-time VRAM monitoring with auto-configuration
+* **Smart Defaults:** Auto-locate models, EPUBs, and cover images (Ctrl+D)
 * **Configuration Profiles:** 6 built-in genre presets + custom profiles
-* **Batch Processing:** Queue multiple books with individual settings
-* **Enhanced Progress:** ETA, speed metrics, chunk-level tracking
-* **Keyboard Shortcuts:** Ctrl+D (defaults), Ctrl+G (generate), Ctrl+E (extract)
-* **Advanced Audio:** Pronunciation dictionary, normalization, silence trimming
-* **Menu System:** Profile management, GPU tools, batch queue
+* **Auto-Find Cover:** Automatically locate matching cover images
+* **Keyboard Shortcuts:** Ctrl+D (defaults), Ctrl+G (generate), Ctrl+E (extract), Ctrl+O (open folder), Ctrl+S (save), Ctrl+Q (quit)
+* **Settings Persistence:** Automatically saves and restores your last settings
+* **Menu System:** Profile management, GPU tools, help documentation
 
 All implemented with **Tkinter** for zero-dependency cross-platform compatibility.
 
-### Web UI Edition (`webui.py`) **NEW!**
-**Browser-based interface with Claude Code-inspired design:**
+### Web UI (`webui.py`) - **NEW! v2.0 Enhanced**
+**Browser-based interface with modern design:**
 * **Local Network Access:** Use from any device on your network (phone, tablet, laptop)
-* **Modern Design:** Dark theme with purple/blue accents, inspired by Claude Code
+* **Modern Design:** Warm brown theme with orange accents, inspired by Claude Code
 * **Tab-Based Layout:** Files & Model, Voice & TTS, Output & Metadata, Quick Test, Generate
+* **GPU Auto-Detection:** Real-time GPU status with VRAM info display
+* **Auto-Configuration:** One-click GPU optimization button
+* **Smart Defaults:** Auto-populate model/EPUB/cover paths with single click
 * **Real-time Updates:** Live progress bars, streaming logs, and status indicators
 * **File Upload/Download:** Drag-and-drop EPUB/cover uploads, direct download of outputs
 * **Voice Presets & Preview:** All 15+ voice presets with in-browser preview generation
 * **Quick Test:** Test TTS without EPUB for rapid iteration
+* **Model Auto-Detection:** Dropdown selection of all detected GGUF models
 * **Independent Operation:** Runs standalone without interfering with CLI/Tkinter UIs
-* **Full Feature Parity:** All features from standard edition available in the browser
+* **Full Feature Parity:** All core features from desktop GUI available in the browser
 
 **Quick Start:**
 ```bash
@@ -288,23 +295,24 @@ python app.py
    - **WAV:** Raw audio file
    - Click **Open Output Folder** to access files
 
-### Quick Start (Enhanced Edition)
+### Power User Tips
 
-1. **Launch Enhanced GUI**
-   ```bash
-   python -c "from ui.main_window_enhanced import EnhancedMainWindow; EnhancedMainWindow().mainloop()"
-   ```
+1. **Use Keyboard Shortcuts**
+   - **Ctrl+D** - Load smart defaults (auto-detects all files)
+   - **Ctrl+E** - Extract EPUB
+   - **Ctrl+G** - Start generation
+   - **Ctrl+O** - Open output folder
+   - **Ctrl+S** - Save settings
+   - **Ctrl+Q** - Quit
 
-2. **Auto-Configure**
-   - Press **Ctrl+D** to load smart defaults (auto-detects all files)
-   - Click **Auto-Configure GPU** in GPU Status section
-   - Select a **Configuration Profile** (Fiction, Non-Fiction, etc.)
+2. **Auto-Configure GPU**
+   - Click **Auto-Configure GPU** in GPU Status banner
+   - Or click **Refresh** to update VRAM info
 
-3. **Batch Processing** (Optional)
-   - Menu → File → Batch Processing
-   - Add multiple EPUBs to queue
-   - Configure individual settings per book
-   - Click **Start Batch** for overnight processing
+3. **Use Configuration Profiles**
+   - Profiles → Load built-in profiles (Fiction, Non-Fiction, Poetry, etc.)
+   - Profiles → Save Current as Profile for custom presets
+   - Quick-switch via dropdown in menu
 
 ### Advanced Features
 
@@ -359,8 +367,8 @@ MayaBook/
 │   └─ audio_advanced.py           # Advanced audio tools (normalization, etc.)
 │
 ├─ ui/                             # GUI implementations
-│   ├─ main_window.py              # Standard Tkinter GUI
-│   └─ main_window_enhanced.py     # Enhanced GUI with advanced features
+│   ├─ main_window.py              # Unified Tkinter GUI (all features)
+│   └─ chapter_selection_dialog.py # Chapter selection dialog
 │
 ├─ webui/                          # Web UI (NiceGUI-based)
 │   ├─ __init__.py                 # Module initialization
@@ -374,12 +382,9 @@ MayaBook/
 │   ├─ models/                     # GGUF model files (gitignored, ~15GB)
 │   └─ test/                       # Sample EPUB/images for testing
 │
-└─ docs/                           # Documentation
-    ├─ README.md                   # This file
-    ├─ CLAUDE.md                   # Developer documentation
-    ├─ ENHANCED_FEATURES.md        # Enhanced edition feature guide
-    ├─ EMOTION_TAGS.md             # Emotion tag reference
-    └─ M4B_CHAPTERS.md             # M4B chapter export guide
+├─ README.md                       # This file (main documentation)
+├─ CLAUDE.md                       # Developer documentation & internal notes
+└─ EMOTION_TAGS.md                 # Emotion tag reference guide
 ```
 
 ---
@@ -649,7 +654,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 - **Issues:** [GitHub Issues](https://github.com/hebbihebb/MayaBook/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/hebbihebb/MayaBook/discussions)
 - **Documentation:** See [CLAUDE.md](CLAUDE.md) for developer guide
-- **Enhanced Features:** See [ENHANCED_FEATURES.md](ENHANCED_FEATURES.md)
+- **Emotion Tags:** See [EMOTION_TAGS.md](EMOTION_TAGS.md) for expressive narration guide
+- **Web UI:** See [webui/README.md](webui/README.md) for web interface documentation
 
 ---
 
@@ -663,4 +669,4 @@ If you find MayaBook useful, please consider starring the repository!
 
 **Built with ❤️ using Python, Maya1, and open-source magic**
 
-**Version:** 2.0 Enhanced Edition | **Last Updated:** 2025-11-14
+**Version:** 2.0 Unified Edition | **Last Updated:** 2025-11-16

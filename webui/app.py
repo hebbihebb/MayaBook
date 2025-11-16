@@ -22,6 +22,8 @@ from core import pipeline
 from core.epub_extract import extract_chapters
 from core.voice_presets import get_preset_names, get_preset_by_name, PREVIEW_TEXT
 from core.voice_preview import generate_voice_preview
+from core.gpu_utils import get_gpu_info, get_recommended_gguf_settings, format_vram_info
+from core.config_manager import get_smart_defaults
 from webui.theme import apply_theme, COLORS
 
 
@@ -115,7 +117,7 @@ def create_ui():
             ui.label('MayaBook Web UI').classes('text-2xl font-bold').style(
                 f'color: {COLORS["accent_orange"]}'
             )
-            ui.badge('v1.0', color='orange').classes('text-sm')
+            ui.badge('v2.0 Enhanced', color='orange').classes('text-sm')
 
     # Main container - wider layout for better space utilization
     with ui.column().classes('w-full max-w-[1600px] mx-auto p-4 gap-4'):
@@ -134,6 +136,42 @@ def create_ui():
             # FILES & MODEL TAB
             # ==========================
             with ui.tab_panel(tab_files):
+                # Smart Defaults Banner
+                with ui.row().classes('w-full items-center gap-4 mb-4 p-3 rounded').style(
+                    f'background: {COLORS["bg_tertiary"]}'
+                ):
+                    ui.icon('auto_awesome', size='md').style(f'color: {COLORS["accent_orange"]}')
+                    ui.label('Quick Start').classes('flex-1 font-semibold')
+                    ui.button(
+                        'Load Smart Defaults',
+                        icon='download',
+                        on_click=lambda: load_smart_defaults()
+                    ).classes('maya-btn-secondary').props('dense')
+
+                def load_smart_defaults():
+                    """Load smart default file paths"""
+                    defaults = get_smart_defaults()
+
+                    if defaults['model_path']:
+                        model_path_input.value = defaults['model_path']
+                        state.model_path = defaults['model_path']
+                        ui.notify(f"✓ Auto-loaded model", type='positive')
+
+                    if defaults['epub_path']:
+                        state.epub_path = defaults['epub_path']
+                        epub_status.set_text(f"Auto-found: {Path(defaults['epub_path']).name}")
+                        ui.notify(f"✓ Auto-found EPUB", type='positive')
+
+                    if defaults['cover_path']:
+                        state.cover_path = defaults['cover_path']
+                        cover_status.set_text(f"Auto-found: {Path(defaults['cover_path']).name}")
+                        ui.notify(f"✓ Auto-found cover", type='positive')
+
+                    if defaults['model_path'] or defaults['epub_path'] or defaults['cover_path']:
+                        ui.notify('Smart defaults loaded!', type='positive')
+                    else:
+                        ui.notify('No defaults found - add files to assets/ folder', type='info')
+
                 with ui.card().classes('maya-card'):
                     ui.label('File Uploads').classes('maya-section-header')
 
@@ -163,6 +201,64 @@ def create_ui():
                 with ui.card().classes('maya-card'):
                     ui.label('Model Configuration').classes('maya-section-header')
 
+                    # GPU Status Banner
+                    with ui.row().classes('w-full items-center gap-4 mb-4 p-3 rounded').style(
+                        f'background: {COLORS["bg_tertiary"]}'
+                    ):
+                        gpu_status_icon = ui.icon('computer', size='md')
+                        gpu_status_label = ui.label('Detecting GPU...').classes('flex-1').style(
+                            f'color: {COLORS["text_secondary"]}'
+                        )
+
+                        gpu_auto_btn = ui.button(
+                            'Auto-Configure GPU',
+                            icon='auto_fix_high',
+                            on_click=lambda: auto_configure_gpu()
+                        ).classes('maya-btn-secondary').props('dense')
+
+                        gpu_refresh_btn = ui.button(
+                            icon='refresh',
+                            on_click=lambda: detect_gpu()
+                        ).props('flat dense').tooltip('Refresh GPU info')
+
+                    # Detect GPU on load
+                    def detect_gpu():
+                        """Detect and display GPU information"""
+                        gpu_info = get_gpu_info()
+
+                        if gpu_info['available']:
+                            vram_total = format_vram_info(gpu_info['vram_total_mb'])
+                            vram_free = format_vram_info(gpu_info['vram_free_mb'])
+                            status_text = f"✓ {gpu_info['name']} | {vram_total} total | {vram_free} free"
+                            gpu_status_label.set_text(status_text)
+                            gpu_status_label.style(f'color: {COLORS["success"]}')
+                            gpu_status_icon.props('name=check_circle color=positive')
+                        else:
+                            gpu_status_label.set_text('⚠️ No GPU detected - CPU mode (slow)')
+                            gpu_status_label.style(f'color: {COLORS["warning"]}')
+                            gpu_status_icon.props('name=warning color=orange')
+
+                    def auto_configure_gpu():
+                        """Auto-configure GPU settings based on detection"""
+                        if not state.model_path:
+                            ui.notify('Please select a model first', type='warning')
+                            return
+
+                        settings = get_recommended_gguf_settings(state.model_path)
+
+                        # Apply settings
+                        n_gpu_layers_input.value = settings['n_gpu_layers']
+                        n_ctx_input.value = settings['n_ctx']
+
+                        ui.notify(f"✓ {settings['explanation']}", type='positive')
+
+                        if settings['warnings']:
+                            for warning in settings['warnings']:
+                                ui.notify(f"⚠️ {warning}", type='warning')
+
+                    # Run GPU detection on page load
+                    ui.timer(0.1, detect_gpu, once=True)
+
                     # Detect available models
                     available_models = detect_available_models()
 
@@ -171,6 +267,12 @@ def create_ui():
                         label='Model Path',
                         placeholder='/path/to/maya1.gguf or /path/to/model_directory'
                     ).classes('w-full maya-input')
+
+                    # Update state when model path changes
+                    def on_model_path_change(e):
+                        state.model_path = model_path_input.value
+
+                    model_path_input.on_value_change(on_model_path_change)
 
                     if available_models:
                         # Create model options for dropdown
@@ -518,7 +620,7 @@ def create_ui():
 
     def generate_preview():
         """Generate voice preview"""
-        if not model_path_input.value:
+        if not state.model_path:
             preview_status.text = '✗ Model path required'
             preview_status.style(f'color: {COLORS["error"]}')
             return
@@ -531,7 +633,7 @@ def create_ui():
             try:
                 preview_path = generate_voice_preview(
                     voice_description=voice_desc_input.value or 'A clear, natural voice',
-                    model_path=model_path_input.value,
+                    model_path=state.model_path,
                     temperature=temperature_slider.value,
                     top_p=top_p_slider.value,
                     n_ctx=int(n_ctx_input.value),
@@ -557,7 +659,7 @@ def create_ui():
 
     def run_quick_test():
         """Run quick test generation"""
-        if not model_path_input.value:
+        if not state.model_path:
             test_status.text = '✗ Model path required'
             test_status.style(f'color: {COLORS["error"]}')
             return
@@ -584,7 +686,7 @@ def create_ui():
 
                 pipeline.run_pipeline(
                     epub_text=test_text_input.value,
-                    model_path=model_path_input.value,
+                    model_path=state.model_path,
                     voice_desc=voice_desc_input.value or 'A clear, natural voice',
                     chunk_size=int(chunk_size_input.value),
                     gap_s=gap_input.value,
@@ -625,7 +727,7 @@ def create_ui():
             log_display.push('✗ Please upload an EPUB file')
             return
 
-        if not model_path_input.value:
+        if not state.model_path:
             log_display.push('✗ Please provide model path')
             return
 
@@ -680,7 +782,7 @@ def create_ui():
                     result = pipeline.run_pipeline_with_chapters(
                         chapters=state.chapters,
                         metadata=metadata,
-                        model_path=model_path_input.value,
+                        model_path=state.model_path,
                         voice_desc=voice_desc_input.value or 'A clear, natural voice',
                         chunk_size=int(chunk_size_input.value),
                         gap_s=gap_input.value,
@@ -714,7 +816,7 @@ def create_ui():
 
                     pipeline.run_pipeline(
                         epub_text=full_text,
-                        model_path=model_path_input.value,
+                        model_path=state.model_path,
                         voice_desc=voice_desc_input.value or 'A clear, natural voice',
                         chunk_size=int(chunk_size_input.value),
                         gap_s=gap_input.value,
