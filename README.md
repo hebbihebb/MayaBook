@@ -98,6 +98,13 @@ It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model 
 
 All implemented with **Tkinter** for zero-dependency cross-platform compatibility.
 
+### New: NiceGUI Web Control (`webui/server.py`)
+* **Browser-based Control:** Upload EPUBs, tweak TTS parameters, and launch jobs from any device on your LAN
+* **Live Logs & Progress:** Stream pipeline logs in real-time and monitor chunk progress without touching the CLI
+* **One-click Downloads:** Grab the generated WAV/MP4 files right from the browser once synthesis completes
+* **Standalone Module:** Run with `python -m webui.server` without interfering with the CLI or Tkinter apps
+* **Claude-inspired Styling:** Dark neon UI modeled after the "claude code" aesthetic for comfy night sessions
+
 ---
 
 ## ⚙️ **Dependencies**
