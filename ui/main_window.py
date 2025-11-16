@@ -652,8 +652,18 @@ class MainWindow(tk.Tk):
             output_dir = str(Path.home() / "MayaBook_Output")
         Path(output_dir).mkdir(parents=True, exist_ok=True)
 
-        # Create quick test output path
-        out_wav = str(Path(output_dir) / "quick_test.wav")
+        # Create quick test output path with timestamp to avoid file locking issues
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_wav = str(Path(output_dir) / f"quick_test_{timestamp}.wav")
+
+        # Stop any playing audio to prevent file locking issues
+        if PYGAME_AVAILABLE:
+            try:
+                pygame.mixer.music.stop()
+                pygame.mixer.music.unload()
+            except:
+                pass
 
         # Disable button during generation
         self.quick_test_button.config(state=tk.DISABLED, text="Generating...")
