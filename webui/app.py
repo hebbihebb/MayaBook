@@ -80,6 +80,29 @@ def setup_logging():
     logger.setLevel(logging.INFO)
 
 
+# Model detection
+def detect_available_models():
+    """Scan for available GGUF models in the assets/models directory"""
+    models = []
+
+    # Check standard location
+    project_root = Path(__file__).parent.parent
+    models_dir = project_root / 'assets' / 'models'
+
+    if models_dir.exists():
+        # Find all .gguf files
+        gguf_files = list(models_dir.glob('*.gguf'))
+        for model_file in sorted(gguf_files):
+            # Get relative path for display, absolute for actual use
+            models.append({
+                'name': model_file.name,
+                'path': str(model_file.absolute()),
+                'size_gb': model_file.stat().st_size / (1024**3)  # Size in GB
+            })
+
+    return models
+
+
 def create_ui():
     """Create the main NiceGUI interface"""
 
@@ -147,10 +170,70 @@ def create_ui():
                             value='gguf'
                         ).classes('flex-1')
 
+                    # Detect available models
+                    available_models = detect_available_models()
+
+                    # Model path input (defined first so we can reference it)
                     model_path_input = ui.input(
                         label='Model Path',
                         placeholder='/path/to/maya1.gguf or /path/to/model_directory'
                     ).classes('w-full maya-input')
+
+                    if available_models:
+                        # Create model options for dropdown
+                        model_options = ['Custom (manual path)'] + [
+                            f"{m['name']} ({m['size_gb']:.1f} GB)" for m in available_models
+                        ]
+
+                        ui.label('Quick Select from Detected Models:').classes('text-sm mt-4 mb-2').style(
+                            f'color: {COLORS["text_secondary"]}'
+                        )
+
+                        with ui.row().classes('w-full gap-4'):
+                            model_select = ui.select(
+                                label='Detected Models',
+                                options=model_options,
+                                value=model_options[1] if len(model_options) > 1 else model_options[0]
+                            ).classes('flex-1')
+
+                            ui.button(
+                                icon='refresh',
+                                on_click=lambda: refresh_models()
+                            ).props('flat dense').classes('mt-6').tooltip('Refresh model list')
+
+                        def on_model_select(e):
+                            """Update model path when dropdown selection changes"""
+                            selected = model_select.value
+                            if selected and selected != 'Custom (manual path)':
+                                # Find the model by name
+                                for model in available_models:
+                                    if selected.startswith(model['name']):
+                                        model_path_input.value = model['path']
+                                        state.model_path = model['path']
+                                        ui.notify(f'Selected: {model["name"]}', type='positive')
+                                        break
+
+                        model_select.on_value_change(on_model_select)
+
+                        # Auto-select first model and populate path
+                        if len(available_models) > 0:
+                            model_path_input.value = available_models[0]['path']
+                            state.model_path = available_models[0]['path']
+
+                        def refresh_models():
+                            """Refresh the model list"""
+                            ui.notify('Refreshing model list...', type='info')
+                            new_models = detect_available_models()
+                            if len(new_models) > len(available_models):
+                                ui.notify(f'Found {len(new_models)} models', type='positive')
+                            elif len(new_models) == 0:
+                                ui.notify('No models found in assets/models/', type='warning')
+                            else:
+                                ui.notify(f'{len(new_models)} models available', type='info')
+                    else:
+                        ui.label('⚠ No models found in assets/models/ - Please enter path manually or add models to the folder').classes('text-sm mb-2').style(
+                            f'color: {COLORS["warning"]}'
+                        )
 
                     with ui.row().classes('w-full gap-4'):
                         n_ctx_input = ui.number(
