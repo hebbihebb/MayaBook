@@ -179,7 +179,7 @@ class MainWindow(tk.Tk):
 
         # --- Quick Test ---
         quick_test_frame = ttk.LabelFrame(main_frame, text="Quick Test (No EPUB Required)")
-        quick_test_frame.grid(row=2, column=0, padx=5, pady=5, sticky="ew")
+        quick_test_frame.grid(row=3, column=0, padx=5, pady=5, sticky="ew")
         quick_test_frame.grid_columnconfigure(0, weight=1)
 
         ttk.Label(quick_test_frame, text="Enter text to quickly test TTS with current settings:",
@@ -693,9 +693,9 @@ class MainWindow(tk.Tk):
 
                     if model_type == "gguf":
                         wav_path = synthesize_fn(
-                            text=chunk,
-                            voice_desc=voice_desc,
                             model_path=model_path,
+                            text=chunk,
+                            voice_description=voice_desc,
                             temperature=temperature,
                             top_p=top_p,
                             n_ctx=n_ctx,
@@ -705,7 +705,7 @@ class MainWindow(tk.Tk):
                     else:  # huggingface
                         wav_path = synthesize_fn(
                             text=chunk,
-                            voice_desc=voice_desc,
+                            voice_description=voice_desc,
                             model_path=model_path,
                             temperature=temperature,
                             top_p=top_p,
