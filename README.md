@@ -98,6 +98,29 @@ It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model 
 
 All implemented with **Tkinter** for zero-dependency cross-platform compatibility.
 
+### Web UI Edition (`webui.py`) **NEW!**
+**Browser-based interface with Claude Code-inspired design:**
+* **Local Network Access:** Use from any device on your network (phone, tablet, laptop)
+* **Modern Design:** Dark theme with purple/blue accents, inspired by Claude Code
+* **Tab-Based Layout:** Files & Model, Voice & TTS, Output & Metadata, Quick Test, Generate
+* **Real-time Updates:** Live progress bars, streaming logs, and status indicators
+* **File Upload/Download:** Drag-and-drop EPUB/cover uploads, direct download of outputs
+* **Voice Presets & Preview:** All 15+ voice presets with in-browser preview generation
+* **Quick Test:** Test TTS without EPUB for rapid iteration
+* **Independent Operation:** Runs standalone without interfering with CLI/Tkinter UIs
+* **Full Feature Parity:** All features from standard edition available in the browser
+
+**Quick Start:**
+```bash
+python webui.py                    # Launch on http://localhost:8080
+python webui.py --port 8000        # Custom port
+python webui.py --host 0.0.0.0     # Local network access (default)
+```
+
+Access from any device: `http://YOUR_IP:8080`
+
+See **[webui/README.md](webui/README.md)** for complete web UI documentation.
+
 ---
 
 ## ⚙️ **Dependencies**
@@ -114,6 +137,7 @@ numpy             # Audio processing
 torch             # GPU operations
 platformdirs      # Cross-platform config storage
 pygame            # Audio preview playback
+nicegui           # Web UI framework (for webui.py)
 ```
 
 ### Optional Packages (Enhanced Features)
@@ -337,6 +361,14 @@ MayaBook/
 ├─ ui/                             # GUI implementations
 │   ├─ main_window.py              # Standard Tkinter GUI
 │   └─ main_window_enhanced.py     # Enhanced GUI with advanced features
+│
+├─ webui/                          # Web UI (NiceGUI-based)
+│   ├─ __init__.py                 # Module initialization
+│   ├─ theme.py                    # Claude Code-inspired theme/CSS
+│   ├─ app.py                      # Main web application
+│   └─ README.md                   # Web UI documentation
+│
+├─ webui.py                        # Web UI entry point
 │
 ├─ assets/
 │   ├─ models/                     # GGUF model files (gitignored, ~15GB)

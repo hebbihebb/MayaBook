@@ -8,6 +8,7 @@ numpy
 torch
 platformdirs
 pygame
+nicegui              # Web UI framework
 
 # Optional: Enhanced features
 librosa              # Advanced audio processing (speech rate, analysis)
