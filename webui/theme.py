@@ -1,27 +1,28 @@
 """
-Claude Code-inspired theme for MayaBook Web UI
+Claude-inspired theme for MayaBook Web UI
 
-Dark theme with purple/blue accents, optimized for readability and modern aesthetics.
+Warm brown backgrounds with orange accents, inspired by Claude's interface.
 """
 
-# Color Palette (inspired by Claude Code)
+# Color Palette (inspired by Claude)
 COLORS = {
-    # Backgrounds
-    'bg_primary': '#1a1a1a',      # Main background (near-black)
-    'bg_secondary': '#242424',    # Card/panel background
-    'bg_tertiary': '#2d2d2d',     # Elevated elements
-    'bg_hover': '#333333',        # Hover states
+    # Backgrounds - Warm browns
+    'bg_primary': '#1a140f',      # Main background (deep warm brown)
+    'bg_secondary': '#2d2420',    # Card/panel background (medium brown)
+    'bg_tertiary': '#3a2f27',     # Elevated elements (lighter brown)
+    'bg_hover': '#4a3d35',        # Hover states (warm tan-brown)
 
-    # Accents
-    'accent_purple': '#a855f7',   # Primary purple accent
-    'accent_purple_hover': '#9333ea',
+    # Accents - Orange primary, Blue secondary
+    'accent_orange': '#ea580c',   # Primary orange accent
+    'accent_orange_hover': '#fb923c',  # Lighter orange on hover
+    'accent_orange_dark': '#c2410c',   # Darker orange
     'accent_blue': '#3b82f6',     # Secondary blue accent
-    'accent_blue_hover': '#2563eb',
+    'accent_blue_hover': '#60a5fa',
 
-    # Text
-    'text_primary': '#e5e5e5',    # Main text
-    'text_secondary': '#a3a3a3',  # Secondary text
-    'text_muted': '#737373',      # Muted text
+    # Text - White and warm tones
+    'text_primary': '#f5f5f5',    # Main text (bright white)
+    'text_secondary': '#d4c5b9',  # Secondary text (warm light tan)
+    'text_muted': '#9c8b7e',      # Muted text (warm medium tan)
 
     # Status Colors
     'success': '#22c55e',
@@ -30,8 +31,8 @@ COLORS = {
     'info': '#3b82f6',
 
     # Borders
-    'border': '#404040',
-    'border_focus': '#a855f7',
+    'border': '#4a3d35',
+    'border_focus': '#ea580c',
 }
 
 # Global CSS styling
@@ -40,7 +41,7 @@ GLOBAL_CSS = f"""
 :root {{
     --primary-bg: {COLORS['bg_primary']};
     --secondary-bg: {COLORS['bg_secondary']};
-    --accent-purple: {COLORS['accent_purple']};
+    --accent-orange: {COLORS['accent_orange']};
     --accent-blue: {COLORS['accent_blue']};
     --text-primary: {COLORS['text_primary']};
     --text-secondary: {COLORS['text_secondary']};
@@ -59,22 +60,22 @@ body {{
     border-radius: 12px;
     padding: 1.5rem;
     margin-bottom: 1.5rem;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
 }}
 
 /* Section headers */
 .maya-section-header {{
-    color: {COLORS['accent_purple']};
+    color: {COLORS['accent_orange']};
     font-size: 1.25rem;
     font-weight: 600;
     margin-bottom: 1rem;
-    border-bottom: 2px solid {COLORS['accent_purple']};
+    border-bottom: 2px solid {COLORS['accent_orange']};
     padding-bottom: 0.5rem;
 }}
 
 /* Primary button */
 .maya-btn-primary {{
-    background: linear-gradient(135deg, {COLORS['accent_purple']}, {COLORS['accent_purple_hover']});
+    background: linear-gradient(135deg, {COLORS['accent_orange']}, {COLORS['accent_orange_dark']});
     color: white;
     border: none;
     border-radius: 8px;
@@ -82,13 +83,13 @@ body {{
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
-    box-shadow: 0 2px 4px rgba(168, 85, 247, 0.3);
+    box-shadow: 0 3px 8px rgba(234, 88, 12, 0.4);
 }}
 
 .maya-btn-primary:hover {{
-    background: linear-gradient(135deg, {COLORS['accent_purple_hover']}, {COLORS['accent_purple']});
-    box-shadow: 0 4px 8px rgba(168, 85, 247, 0.4);
-    transform: translateY(-1px);
+    background: linear-gradient(135deg, {COLORS['accent_orange_hover']}, {COLORS['accent_orange']});
+    box-shadow: 0 5px 15px rgba(234, 88, 12, 0.5);
+    transform: translateY(-2px);
 }}
 
 /* Secondary button */
@@ -121,7 +122,7 @@ body {{
 .maya-input:focus {{
     border-color: {COLORS['border_focus']};
     outline: none;
-    box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1);
+    box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15);
 }}
 
 /* Upload area */
@@ -136,7 +137,7 @@ body {{
 }}
 
 .maya-upload:hover {{
-    border-color: {COLORS['accent_purple']};
+    border-color: {COLORS['accent_orange']};
     background-color: {COLORS['bg_hover']};
 }}
 
@@ -149,9 +150,10 @@ body {{
 }}
 
 .maya-progress-bar {{
-    background: linear-gradient(90deg, {COLORS['accent_purple']}, {COLORS['accent_blue']});
+    background: linear-gradient(90deg, {COLORS['accent_orange']}, {COLORS['accent_orange_hover']});
     height: 100%;
     transition: width 0.3s;
+    box-shadow: 0 0 10px rgba(234, 88, 12, 0.4);
 }}
 
 /* Log container */
@@ -170,7 +172,7 @@ body {{
 
 /* Slider styling */
 .maya-slider {{
-    accent-color: {COLORS['accent_purple']};
+    accent-color: {COLORS['accent_orange']};
 }}
 
 /* Select/dropdown */
@@ -184,7 +186,7 @@ body {{
 
 /* Badge/chip */
 .maya-badge {{
-    background-color: {COLORS['accent_purple']};
+    background-color: {COLORS['accent_orange']};
     color: white;
     padding: 0.25rem 0.75rem;
     border-radius: 12px;
@@ -248,7 +250,7 @@ body {{
 }}
 
 .q-tab--active {{
-    color: {COLORS['accent_purple']} !important;
+    color: {COLORS['accent_orange']} !important;
 }}
 
 .q-linear-progress__track {{
@@ -256,7 +258,7 @@ body {{
 }}
 
 .q-linear-progress__model {{
-    background: linear-gradient(90deg, {COLORS['accent_purple']}, {COLORS['accent_blue']}) !important;
+    background: linear-gradient(90deg, {COLORS['accent_orange']}, {COLORS['accent_orange_hover']}) !important;
 }}
 """
 

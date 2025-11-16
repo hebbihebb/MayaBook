@@ -90,9 +90,9 @@ def create_ui():
     with ui.header().classes('bg-transparent'):
         with ui.row().classes('w-full items-center justify-between'):
             ui.label('MayaBook Web UI').classes('text-2xl font-bold').style(
-                f'color: {COLORS["accent_purple"]}'
+                f'color: {COLORS["accent_orange"]}'
             )
-            ui.badge('v1.0', color='purple').classes('text-sm')
+            ui.badge('v1.0', color='orange').classes('text-sm')
 
     # Main container
     with ui.column().classes('w-full max-w-7xl mx-auto p-4 gap-4'):
