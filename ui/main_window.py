@@ -212,7 +212,7 @@ class MainWindow(tk.Tk):
 
         ttk.Label(model_frame, text="Model Type:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.model_type = tk.StringVar(value="gguf")
-        model_type_combo = ttk.Combobox(model_frame, textvariable=self.model_type, values=["gguf", "huggingface"], state="readonly", width=15)
+        model_type_combo = ttk.Combobox(model_frame, textvariable=self.model_type, values=["gguf", "huggingface", "vllm"], state="readonly", width=15)
         model_type_combo.grid(row=0, column=1, padx=5, pady=5, sticky="w")
         model_type_combo.bind("<<ComboboxSelected>>", self._on_model_type_change)
 
@@ -679,7 +679,15 @@ class MainWindow(tk.Tk):
         model_type = self.model_type.get()
         if model_type == "gguf":
             path = filedialog.askopenfilename(filetypes=[("GGUF model files", "*.gguf")])
-        else:
+        elif model_type == "vllm":
+            # vLLM can use both GGUF files and HF directories
+            choice = messagebox.askquestion("Select Model Type",
+                                           "Select GGUF file? (No = HuggingFace directory)")
+            if choice == "yes":
+                path = filedialog.askopenfilename(filetypes=[("GGUF model files", "*.gguf")])
+            else:
+                path = filedialog.askdirectory(title="Select HuggingFace Model Directory")
+        else:  # huggingface
             path = filedialog.askdirectory(title="Select HuggingFace Model Directory")
         if path:
             self.model_path.set(path)
@@ -691,6 +699,11 @@ class MainWindow(tk.Tk):
         if model_type == "gguf":
             self.gguf_settings_frame.grid()
             self.model_path.set("assets/models/maya1.i1-Q5_K_M.gguf")
+        elif model_type == "vllm":
+            self.gguf_settings_frame.grid_remove()
+            # vLLM can use GGUF files or HF models
+            self.model_path.set("assets/models/maya1.i1-Q5_K_M.gguf")
+            self.log_message("Note: vLLM GGUF support is experimental. HF models recommended.")
         else:  # huggingface
             self.gguf_settings_frame.grid_remove()
             self.model_path.set("assets/models/maya1_4bit_safetensor")
@@ -998,6 +1011,8 @@ class MainWindow(tk.Tk):
                 # Import the appropriate TTS module based on model type
                 if model_type == "gguf":
                     from core.tts_maya1_local import synthesize_chunk_local as synthesize_fn
+                elif model_type == "vllm":
+                    from core.tts_maya1_vllm import synthesize_chunk_vllm as synthesize_fn
                 else:
                     from core.tts_maya1_hf import synthesize_chunk_hf as synthesize_fn
 
@@ -1020,6 +1035,17 @@ class MainWindow(tk.Tk):
                             n_ctx=n_ctx,
                             n_gpu_layers=n_gpu_layers,
                             max_tokens=2500,
+                        )
+                    elif model_type == "vllm":
+                        wav_path = synthesize_fn(
+                            model_path=model_path,
+                            text=chunk,
+                            voice_description=voice_desc,
+                            temperature=temperature,
+                            top_p=top_p,
+                            max_tokens=2500,
+                            # vLLM-specific: tokenizer needed for GGUF models
+                            tokenizer_path=None,  # Auto-detect or use model's tokenizer
                         )
                     else:  # huggingface
                         wav_path = synthesize_fn(

@@ -11,6 +11,7 @@ from typing import List, Tuple, Dict, Optional
 from .chunking import chunk_text
 from .tts_maya1_local import synthesize_chunk_local
 from .tts_maya1_hf import synthesize_chunk_hf
+from .tts_maya1_vllm import synthesize_chunk_vllm
 from .audio_combine import concat_wavs
 from .video_export import export_mp4
 from .m4b_export import create_m4b_stream, write_chapter_metadata_file, add_chapters_to_m4b
@@ -43,7 +44,10 @@ def run_pipeline(
     n_gpu_layers: int = -1,
     workers: int = 1,
     max_tokens: int = 2500,
-    model_type: str = "gguf",  # "gguf" or "huggingface"
+    model_type: str = "gguf",  # "gguf", "huggingface", or "vllm"
+    tokenizer_path: Optional[str] = None,  # Required for vLLM GGUF models
+    gpu_memory_utilization: float = 0.9,  # vLLM memory usage
+    tensor_parallel_size: int = 1,  # vLLM multi-GPU support
     progress_cb=None,
     stop_flag=None,
 ):
@@ -51,7 +55,10 @@ def run_pipeline(
     Runs the full text-to-video pipeline.
 
     Args:
-        model_type: "gguf" for llama.cpp GGUF models, "huggingface" for HF safetensor models
+        model_type: "gguf" for llama.cpp, "huggingface" for HF transformers, "vllm" for vLLM engine
+        tokenizer_path: Tokenizer path (required for vLLM with GGUF models)
+        gpu_memory_utilization: GPU memory fraction for vLLM (0.0-1.0)
+        tensor_parallel_size: Number of GPUs for vLLM tensor parallelism
     """
     logger.info("="*60)
     logger.info("Starting MayaBook pipeline")
@@ -113,6 +120,18 @@ def run_pipeline(
                         temperature=temperature,
                         top_p=top_p,
                         max_tokens=max_tokens,
+                    )
+                elif model_type == "vllm":
+                    wav_path = synthesize_chunk_vllm(
+                        model_path=model_path,
+                        text=t,
+                        voice_description=voice_desc,
+                        temperature=temperature,
+                        top_p=top_p,
+                        max_tokens=max_tokens,
+                        tokenizer_path=tokenizer_path,
+                        gpu_memory_utilization=gpu_memory_utilization,
+                        tensor_parallel_size=tensor_parallel_size,
                     )
                 else:  # gguf
                     wav_path = synthesize_chunk_local(
@@ -195,6 +214,9 @@ def run_pipeline_with_chapters(
     workers: int = 1,
     max_tokens: int = 2500,
     model_type: str = "gguf",
+    tokenizer_path: Optional[str] = None,
+    gpu_memory_utilization: float = 0.9,
+    tensor_parallel_size: int = 1,
     progress_cb=None,
     stop_flag=None,
 ) -> Dict[str, any]:
@@ -220,7 +242,10 @@ def run_pipeline_with_chapters(
         n_gpu_layers: GPU layers (GGUF only)
         workers: Number of worker threads
         max_tokens: Max tokens per generation
-        model_type: "gguf" or "huggingface"
+        model_type: "gguf", "huggingface", or "vllm"
+        tokenizer_path: Tokenizer path (required for vLLM with GGUF)
+        gpu_memory_utilization: GPU memory fraction for vLLM
+        tensor_parallel_size: Number of GPUs for vLLM
         progress_cb: Progress callback function(current, total, chapter_info)
         stop_flag: Threading event to stop processing
 
@@ -338,6 +363,9 @@ def run_pipeline_with_chapters(
                 n_ctx=n_ctx,
                 n_gpu_layers=n_gpu_layers,
                 max_tokens=max_tokens,
+                tokenizer_path=tokenizer_path,
+                gpu_memory_utilization=gpu_memory_utilization,
+                tensor_parallel_size=tensor_parallel_size,
                 workers=workers,
                 stop_flag=stop_flag,
                 progress_cb=lambda curr, total: progress_cb(
@@ -503,6 +531,9 @@ def _process_chunks_parallel(
     n_ctx: int,
     n_gpu_layers: int,
     max_tokens: int,
+    tokenizer_path: Optional[str],
+    gpu_memory_utilization: float,
+    tensor_parallel_size: int,
     workers: int,
     stop_flag,
     progress_cb=None,
@@ -542,6 +573,18 @@ def _process_chunks_parallel(
                         temperature=temperature,
                         top_p=top_p,
                         max_tokens=max_tokens,
+                    )
+                elif model_type == "vllm":
+                    wav_path = synthesize_chunk_vllm(
+                        model_path=model_path,
+                        text=text,
+                        voice_description=voice_desc,
+                        temperature=temperature,
+                        top_p=top_p,
+                        max_tokens=max_tokens,
+                        tokenizer_path=tokenizer_path,
+                        gpu_memory_utilization=gpu_memory_utilization,
+                        tensor_parallel_size=tensor_parallel_size,
                     )
                 else:  # gguf
                     wav_path = synthesize_chunk_local(
