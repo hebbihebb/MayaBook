@@ -336,9 +336,9 @@ def create_ui():
                     with ui.row().classes('w-full gap-4'):
                         model_type_select = ui.select(
                             label='Model Type',
-                            options=['gguf', 'huggingface'],
+                            options=['gguf', 'huggingface', 'vllm'],
                             value='gguf'
-                        ).classes('flex-1')
+                        ).classes('flex-1').tooltip('vLLM: High-performance inference engine (GGUF support experimental)')
 
                         n_ctx_input = ui.number(
                             label='Context Size (n_ctx)',

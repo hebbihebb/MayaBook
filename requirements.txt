@@ -15,6 +15,7 @@ librosa              # Advanced audio processing (speech rate, analysis)
 transformers         # HuggingFace model support (experimental)
 bitsandbytes         # 4-bit quantization (Linux only)
 accelerate           # Multi-GPU support
+vllm                 # vLLM inference engine (high-performance, experimental GGUF support)
 
 # Note: For GPU acceleration, install llama-cpp-python with CUDA support:
 # pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121

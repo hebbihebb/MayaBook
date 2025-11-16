@@ -9,9 +9,12 @@
 **MayaBook** is a local EPUB-to-audiobook converter using the Maya1 TTS model. It extracts text from EPUB files, synthesizes speech using GPU-accelerated inference, and produces M4B/WAV audiobooks with professional quality.
 
 ### Key Technologies
-- **Maya1 GGUF Model**: Text-to-speech via llama-cpp-python
+- **Maya1 Model**: Text-to-speech with three backend options:
+  - **llama-cpp-python** (GGUF): Optimized quantized models
+  - **HuggingFace Transformers**: 4-bit safetensor models
+  - **vLLM** (NEW): High-performance inference engine with experimental GGUF support
 - **SNAC Audio Codec**: Neural audio codec for waveform generation
-- **GPU Acceleration**: CUDA support via llama-cpp-python
+- **GPU Acceleration**: CUDA support across all backends
 - **Dual UI**: Unified Tkinter GUI + NiceGUI Web Interface
 - **M4B Export**: Chapter-aware audiobook format with FFmpeg
 
@@ -67,6 +70,37 @@ Output: book.m4b or book.wav
 - **Critical Fix (2025-11-13)**:
   - Added `llm.reset()` to prevent KV cache carryover between chunks
   - Previously, model state from chunk N affected chunk N+1, causing wrong speech generation
+
+#### `core/tts_maya1_hf.py`
+- **Purpose**: HuggingFace Transformers-based TTS synthesis
+- **Key Function**: `synthesize_chunk_hf(...) -> str` (returns temp WAV path)
+- **Features**:
+  - Supports 4-bit quantized safetensor models via bitsandbytes
+  - Better emotion tag support
+  - GPU acceleration via CUDA
+  - CPU fallback (slow)
+
+#### `core/tts_maya1_vllm.py` (NEW - 2025-11-16)
+- **Purpose**: High-performance TTS synthesis using vLLM inference engine
+- **Key Function**: `synthesize_chunk_vllm(...) -> str` (returns temp WAV path)
+- **Key Advantages**:
+  - **Thread-Safe**: No locks needed - enables true parallel chunk processing
+  - **PagedAttention**: More efficient GPU memory usage
+  - **Better Batching**: Process multiple chunks simultaneously
+  - **Multi-GPU Support**: Built-in tensor parallelism
+  - **GGUF Support**: Experimental support for GGUF models (requires separate tokenizer)
+- **Critical Features**:
+  - RMS quality check with retries (same as llama.cpp backend)
+  - Deterministic seeding for reproducibility
+  - Supports both GGUF and HuggingFace model formats
+- **Parameters**:
+  - `tokenizer_path`: Required for GGUF models, optional for HF models
+  - `gpu_memory_utilization`: GPU memory fraction (0.0-1.0, default 0.9)
+  - `tensor_parallel_size`: Number of GPUs for tensor parallelism (default 1)
+- **Notes**:
+  - vLLM's GGUF support is experimental - HuggingFace models recommended
+  - Requires CUDA 11.8+ (stricter than llama.cpp)
+  - Larger installation size (~2GB)
 
 #### `core/audio_combine.py`
 - **Purpose**: Concatenate chunk WAVs into final audio
@@ -334,6 +368,8 @@ python diagnose_audio.py /path/to/temp/tmp*.wav
 
 ### Critical Packages
 - **llama-cpp-python**: GGUF inference engine (CUDA-enabled)
+- **vllm**: High-performance inference engine (optional, experimental GGUF support)
+- **transformers**: HuggingFace model support (optional)
 - **snac**: Audio codec model
 - **torch**: Required by SNAC
 - **soundfile**: WAV I/O
@@ -348,6 +384,12 @@ pip install llama-cpp-python --extra-index-url \
 
 # Standard packages
 pip install -r requirements.txt
+
+# Optional: vLLM for high-performance inference
+pip install vllm
+
+# Optional: HuggingFace transformers backend
+pip install transformers bitsandbytes accelerate
 ```
 
 ---
@@ -385,6 +427,25 @@ Audio Issue?
 ---
 
 ## Version History
+
+### v2.2 vLLM Integration (2025-11-16) - High-Performance Inference
+- ✅ **vLLM Backend Support**: Added vLLM as third inference engine option
+  - High-performance inference with PagedAttention memory optimization
+  - Thread-safe design enables true parallel chunk processing
+  - Experimental GGUF support (requires separate tokenizer)
+  - Native HuggingFace model support recommended
+  - Multi-GPU tensor parallelism support
+- ✅ **Updated Pipeline**: Enhanced `run_pipeline` and `run_pipeline_with_chapters` for vLLM
+  - Added `tokenizer_path`, `gpu_memory_utilization`, `tensor_parallel_size` parameters
+  - Model type selection: "gguf", "huggingface", or "vllm"
+- ✅ **UI Updates**: Both Tkinter and NiceGUI interfaces now include vLLM option
+  - Model type dropdown includes vLLM with helpful tooltips
+  - Smart model path selection for GGUF vs HuggingFace formats
+- ✅ **Documentation**: Comprehensive vLLM documentation in CLAUDE.md
+  - Backend architecture and advantages
+  - Installation instructions
+  - Configuration parameters
+  - Known limitations and recommendations
 
 ### v2.1 Audiobook Focus (2025-11-16) - MP4 Deprecation
 - ✅ **Deprecated MP4 Support**: Removed MP4 video export from all user-facing interfaces
