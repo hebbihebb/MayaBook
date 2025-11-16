@@ -59,7 +59,6 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     out_wav = f"{args.output}.wav"
-    out_mp4 = f"{args.output}.mp4"
 
     print("\n" + "="*60)
     print("MayaBook CLI Test")
@@ -68,7 +67,7 @@ def main():
     print(f"Model: {args.model}")
     print(f"Voice: {args.voice}")
     print(f"Workers: {args.workers}")
-    print(f"Output: {out_wav}, {out_mp4}")
+    print(f"Output: {out_wav}")
     print("="*60 + "\n")
 
     def progress_callback(completed, total):
@@ -77,14 +76,13 @@ def main():
 
     try:
         print("Starting pipeline...")
-        wav_path, mp4_path = run_pipeline(
+        wav_path, _ = run_pipeline(
             epub_text=args.text,
             model_path=args.model,
             voice_desc=args.voice,
             chunk_size=args.chunk_size,
             gap_s=args.gap,
             out_wav=out_wav,
-            out_mp4=out_mp4,
             cover_image=args.cover,
             temperature=args.temp,
             top_p=args.top_p,
@@ -100,7 +98,6 @@ def main():
         print("SUCCESS!")
         print("="*60)
         print(f"Audio: {wav_path}")
-        print(f"Video: {mp4_path}")
         print("="*60)
 
     except KeyboardInterrupt:

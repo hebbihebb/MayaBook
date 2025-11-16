@@ -311,10 +311,10 @@ class MainWindow(tk.Tk):
         ttk.Label(format_frame, text="Format:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
         self.output_format = tk.StringVar(value="m4b")
         self.format_combo = ttk.Combobox(format_frame, textvariable=self.output_format,
-                                         values=["m4b", "wav", "mp4"], state="readonly", width=15)
+                                         values=["m4b", "wav"], state="readonly", width=15)
         self.format_combo.grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
-        format_help = ttk.Label(format_frame, text="M4B: Audiobook with chapters | WAV: Lossless audio | MP4: Video with cover",
+        format_help = ttk.Label(format_frame, text="M4B: Audiobook with chapters (cover optional) | WAV: Lossless audio",
                                foreground="gray")
         format_help.grid(row=1, column=0, columnspan=3, padx=5, pady=(0, 5), sticky="w")
 
@@ -1089,20 +1089,14 @@ class MainWindow(tk.Tk):
 
         # Check for FFmpeg
         output_format = self.output_format.get()
-        if output_format in ["m4b", "mp4"] and not shutil.which("ffmpeg"):
+        if output_format == "m4b" and not shutil.which("ffmpeg"):
             messagebox.showerror("FFmpeg Not Found",
-                f"FFmpeg is required for {output_format.upper()} export but was not found in PATH.\n\n"
+                f"FFmpeg is required for M4B export but was not found in PATH.\n\n"
                 "Please install FFmpeg:\n"
                 "- Windows: Download from ffmpeg.org and add to PATH\n"
                 "- macOS: brew install ffmpeg\n"
                 "- Linux: sudo apt install ffmpeg")
             return
-
-        # For MP4 output, cover is required
-        if output_format == "mp4":
-            if not cover_path or not os.path.exists(cover_path):
-                messagebox.showerror("Error", "Please select a valid cover image for MP4 output.")
-                return
 
         output_dir = self.output_folder.get()
         if not output_dir:
@@ -1173,12 +1167,8 @@ class MainWindow(tk.Tk):
                 messagebox.showerror("Error", "EPUB text is empty.")
                 return
 
-            if not cover_path or not os.path.exists(cover_path):
-                messagebox.showerror("Error", "Please select a valid cover image for legacy MP4 mode.")
-                return
-
             # --- Prepare for legacy pipeline ---
-            self.log_message("Starting generation (legacy mode)...")
+            self.log_message("Starting generation (legacy mode - WAV output only)...")
             self.progress['value'] = 0
             self.generate_button.config(state=tk.DISABLED)
             self.cancel_button.config(state=tk.NORMAL)
@@ -1187,14 +1177,13 @@ class MainWindow(tk.Tk):
 
             base_name = Path(self.epub_path.get()).stem
             out_wav = str(Path(output_dir) / f"{base_name}.wav")
-            out_mp4 = str(Path(output_dir) / f"{base_name}.mp4")
 
             # --- Run legacy pipeline in a thread ---
             self.generation_thread = threading.Thread(
                 target=self._run_pipeline_thread,
                 args=(
                     epub_text, model_path, self.voice_description.get("1.0", tk.END).strip(),
-                    self.chunk_size.get(), self.gap_size.get(), out_wav, out_mp4,
+                    self.chunk_size.get(), self.gap_size.get(), out_wav, None,
                     cover_path, self.temperature.get(), self.top_p.get(),
                     self.n_ctx.get(), self.n_gpu_layers.get(), self.model_type.get(),
                 ),
@@ -1280,7 +1269,7 @@ class MainWindow(tk.Tk):
                 f"Chapters: {len(result.get('chapter_times', []))}")
         else:
             # Legacy pipeline result
-            messagebox.showinfo("Success", "MP4 generation complete.")
+            messagebox.showinfo("Success", "WAV generation complete.")
 
         self._reset_ui_state()
 
@@ -1315,7 +1304,7 @@ class MainWindow(tk.Tk):
             self.log_message(f"⚠️ {message}")
             self.log_message("M4B format requires FFmpeg. Please install FFmpeg to use M4B export.")
             # Disable M4B option if FFmpeg not available
-            self.format_combo.config(values=["wav", "mp4"])
+            self.format_combo.config(values=["wav"])
             if self.output_format.get() == "m4b":
                 self.output_format.set("wav")
         else:

@@ -35,8 +35,8 @@ def run_pipeline(
     chunk_size: int,
     gap_s: float,
     out_wav: str,
-    out_mp4: str,
-    cover_image: str,
+    out_mp4: Optional[str] = None,  # Deprecated: MP4 support removed
+    cover_image: Optional[str] = None,
     temperature: float = 0.4,
     top_p: float = 0.9,
     n_ctx: int = 4096,
@@ -167,25 +167,12 @@ def run_pipeline(
         logger.error(f"Error concatenating audio: {e}", exc_info=True)
         raise
 
-    # Only create MP4 if output path is specified
-    final_mp4_path = None
-    if out_mp4:
-        logger.info("Creating video from audio and cover image...")
-        try:
-            final_mp4_path = export_mp4(cover_image, final_wav_path, out_mp4)
-            logger.info(f"Final video saved: {final_mp4_path}")
-        except Exception as e:
-            logger.error(f"Error creating video: {e}", exc_info=True)
-            raise
-    else:
-        logger.info("Skipping MP4 creation (no output path specified)")
-
     logger.info("="*60)
     logger.info("Pipeline completed successfully!")
     logger.info(f"Log file: {log_filename}")
     logger.info("="*60)
 
-    return final_wav_path, final_mp4_path
+    return final_wav_path, None  # Second value kept for backward compatibility
 
 
 def run_pipeline_with_chapters(
@@ -196,8 +183,8 @@ def run_pipeline_with_chapters(
     chunk_size: int,
     gap_s: float,
     output_base_path: str,
-    cover_image: str,
-    output_format: str = "m4b",  # "wav", "mp4", "m4b"
+    cover_image: Optional[str] = None,
+    output_format: str = "m4b",  # "wav" or "m4b"
     save_chapters_separately: bool = False,
     merge_chapters: bool = True,
     chapter_silence: float = 2.0,
@@ -222,8 +209,8 @@ def run_pipeline_with_chapters(
         chunk_size: Max words per chunk (if < 500) or max chars
         gap_s: Silence gap between chunks (seconds)
         output_base_path: Base path for output (without extension)
-        cover_image: Path to cover image (for MP4)
-        output_format: Output format ("wav", "mp4", "m4b")
+        cover_image: Path to cover image (optional for M4B)
+        output_format: Output format ("wav" or "m4b")
         save_chapters_separately: Save individual chapter files
         merge_chapters: Create merged output file
         chapter_silence: Silence between chapters (seconds)
@@ -260,7 +247,7 @@ def run_pipeline_with_chapters(
     sanitized_base_name = sanitize_name_for_os(base_name, is_folder=False)
 
     # Find unique paths for outputs
-    avoid_exts = [".wav", ".mp4", ".m4b", ".m4a"]
+    avoid_exts = [".wav", ".m4b", ".m4a"]
     merged_path, suffix = find_unique_path(
         os.path.join(base_dir, sanitized_base_name),
         f".{output_format}",
@@ -461,13 +448,6 @@ def run_pipeline_with_chapters(
                     os.remove(metadata_path)
                     logger.info("Chapter metadata added successfully")
 
-            # Create MP4 from WAV if requested
-            if output_format == "mp4":
-                wav_path = merged_path.replace(".mp4", ".wav")
-                if os.path.exists(wav_path):
-                    logger.info("Creating MP4 from WAV and cover image...")
-                    export_mp4(cover_image, wav_path, merged_path)
-                    logger.info(f"MP4 created: {merged_path}")
 
     except Exception as e:
         logger.error(f"Pipeline error: {e}", exc_info=True)

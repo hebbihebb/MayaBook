@@ -1,13 +1,13 @@
 # **MayaBook**
 
-**EPUB → TTS → MP4/M4B Audiobook Generator**
+**EPUB → TTS → M4B Audiobook Generator**
 
-MayaBook is a work in progress application that converts EPUB books into high-quality narrated audiobooks (MP4/M4B formats).
+MayaBook is a work in progress application that converts EPUB books into high-quality narrated audiobooks (M4B/WAV formats).
 It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model running locally via **GGUF quantized models** and `llama-cpp-python` to generate expressive, human-like speech with GPU acceleration.
 
 ![MayaBook GUI](screenshot.jpg)
 
-**Version:** 2.0 Unified Edition
+**Version:** 2.1 Audiobook Focus
 **Status:** Production Ready ✓
 
 ---
@@ -15,8 +15,8 @@ It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model 
 ## ✨ **Overview**
 
 **Input:** EPUB file(s)
-**Process:** extract text → synthesize with local Maya1 GGUF → generate WAV audio → merge → create MP4/M4B
-**Output:** Professional audiobook with chapters, metadata, and cover art
+**Process:** extract text → synthesize with local Maya1 GGUF → generate WAV audio → merge → create M4B
+**Output:** Professional audiobook with chapters, metadata, and optional cover art
 
 ### Key Features
 
@@ -63,14 +63,14 @@ It uses the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model 
 3. **Combine Audio**
    All chunk WAVs are concatenated into a single `book.wav`, with configurable silence gaps between chunks.
 
-4. **Export MP4**
-   A cover image is combined with the audio using FFmpeg:
+4. **Export M4B**
+   Audio is encoded to M4B audiobook format with chapters and metadata:
 
-   ```bash
-   ffmpeg -loop 1 -i cover.jpg -i book.wav \
-          -c:v libx264 -tune stillimage -c:a aac -b:a 192k \
-          -shortest output.mp4
-   ```
+   * AAC encoding for efficient file size
+   * Embedded chapter markers for navigation
+   * Metadata tags (title, author, genre, etc.)
+   * Optional cover art support
+   * No video encoding (pure audiobook format)
 
 ---
 
@@ -159,7 +159,7 @@ accelerate        # Multi-GPU support
 ### System Requirements
 
 * **Python:** 3.10+ (tested with 3.13)
-* **FFmpeg:** Required in PATH for MP4/M4B export
+* **FFmpeg:** Required in PATH for M4B audiobook export
 * **GPU:** NVIDIA CUDA-compatible GPU strongly recommended
   - VRAM: 8GB+ for Q5_K_M model
   - CPU-only mode supported but 50x slower
@@ -290,9 +290,8 @@ python app.py
    - Use **Cancel** to stop if needed
 
 6. **Output Files**
-   - **MP4:** Video file with cover image + audio
-   - **M4B:** Audiobook format with chapters (if detected)
-   - **WAV:** Raw audio file
+   - **M4B:** Audiobook format with chapters and metadata (optional cover art)
+   - **WAV:** Lossless audio file
    - Click **Open Output Folder** to access files
 
 ### Power User Tips
@@ -353,8 +352,8 @@ MayaBook/
 │   ├─ epub_extract.py             # EPUB → text extraction
 │   ├─ chunking.py                 # Text → word-based chunks
 │   ├─ audio_combine.py            # WAV concatenation
-│   ├─ video_export.py             # MP4 creation (FFmpeg wrapper)
 │   ├─ m4b_export.py               # M4B audiobook export with chapters
+│   ├─ video_export.py             # DEPRECATED: MP4 video export (legacy)
 │   ├─ pipeline.py                 # End-to-end orchestration
 │   │
 │   ├─ voice_presets.py            # Voice preset library (15+ voices)
@@ -531,11 +530,12 @@ MayaBook/
 - If persisting: Reduce chunk size to 60 words
 - Check logs for "Generated 2500 total tokens" warnings
 
-**"FFmpeg error during MP4/M4B export"**
+**"FFmpeg error during M4B export"**
 - Install FFmpeg: https://ffmpeg.org/download.html
 - Add to PATH (Windows: Edit Environment Variables)
 - Verify: `ffmpeg -version` in terminal
 - Restart terminal/GUI after installation
+- M4B format requires FFmpeg with AAC codec support
 
 ### Audio Quality Issues
 
