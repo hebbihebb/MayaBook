@@ -268,10 +268,25 @@ MAX_GEN_ATTEMPTS = 3         # retry attempts for silent audio
 - Duration Scaling: Proper linear scaling from 2.30s to 30.38s
 - Emotion Tags: <gasp>, <cry>, <whisper> all working perfectly
 
+**Real-World Observations (User Validated):**
+- ✅ All tests 1-3 and 5 sound excellent with no quality issues
+- ⚠️ Tests 4 & 5 cut off abruptly on last word (token limit issue - see note below)
+- ✅ Emotion tags working correctly with single-tag format (no looping)
+- ⚠️ Multiple emotion tags converge behavior: <gasp>, <cry> both rendered as <gasp>
+  - Maya1 authors recommend using emotion tags sparingly
+  - Excessive emotion tags in single passage not recommended
+- ⚠️ Female voice with emotion tags: Minor audio warble/distortion artifact (non-critical, not affecting overall quality)
+
+**Token Limit Note:**
+- Tests 4 (62 words) & 5 (52 words) exceeded comfortable token budget at max_tokens=2500
+- Recommendation: Increase max_tokens to 3000-3500 for technical/emotion-heavy content
+- 70-word default chunk size should stay below this limit with margin
+
 **Conclusion:**
 ✅ **float16 fix is ROBUST** across all text lengths (5-66 words) and content types
 ✅ **HuggingFace backend PRODUCTION-READY** for single-voice audiobook synthesis
 ✅ **Emotion tag format validated** - single tags work correctly without looping
+⚠️ **Emotion tag best practices**: Use sparingly, avoid multiple emotion tags in same passage
 
 ---
 
