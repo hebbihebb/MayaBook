@@ -124,8 +124,26 @@ def _build_prompt_tokens(llm, description: str, text: str) -> list[int]:
     logger.debug(f"Prompt payload: {payload[:200]}...")
 
     # Get tokenizer from vLLM
-    tokenizer = llm.llm_engine.tokenizer.tokenizer
-    payload_tokens = tokenizer.encode(payload, add_special_tokens=False)
+    # vLLM's tokenizer wrapper uses _tokenizer for the underlying tokenizer
+    tokenizer_wrapper = llm.llm_engine.tokenizer
+    if hasattr(tokenizer_wrapper, '_tokenizer'):
+        tokenizer = tokenizer_wrapper._tokenizer
+    elif hasattr(tokenizer_wrapper, 'tokenizer'):
+        tokenizer = tokenizer_wrapper.tokenizer
+    else:
+        tokenizer = tokenizer_wrapper
+
+    payload_tokens_raw = tokenizer.encode(payload, add_special_tokens=False)
+
+    # Handle different tokenizer return types
+    # Some tokenizers return Encoding objects, others return lists
+    if hasattr(payload_tokens_raw, 'ids'):
+        payload_tokens = payload_tokens_raw.ids  # tokenizers.Encoding object
+    elif isinstance(payload_tokens_raw, list):
+        payload_tokens = payload_tokens_raw  # Already a list
+    else:
+        payload_tokens = list(payload_tokens_raw)  # Convert to list
+
     logger.debug(f"Payload tokenized to {len(payload_tokens)} tokens")
 
     # Get BOS token ID
@@ -243,8 +261,11 @@ def synthesize_chunk_vllm(
         )
 
         # Generate using vLLM (thread-safe, no lock needed!)
+        # vLLM expects prompts as a list of token ID lists
         outputs = llm.generate(
-            prompt_token_ids=[prompt_tokens],
+            prompts=[{
+                "prompt_token_ids": prompt_tokens
+            }],
             sampling_params=sampling_params,
             use_tqdm=False,
         )
