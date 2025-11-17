@@ -1,7 +1,7 @@
 # core/chunking.py
 import re
 
-def chunk_text(s: str, max_chars: int = 300, max_words: int = 70) -> list[str]:
+def chunk_text(s: str, max_chars: int = 350, max_words: int = 70) -> list[str]:
     """
     Splits a string into a list of strings using DUAL CONSTRAINTS (words AND chars).
     The splitting is sentence-aware and preserves emotion tags.
@@ -9,7 +9,7 @@ def chunk_text(s: str, max_chars: int = 300, max_words: int = 70) -> list[str]:
     Args:
         s: Text to chunk
         max_words: Maximum words per chunk (default: 70, recommended for token budget with max_tokens=2500)
-        max_chars: Maximum characters per chunk (default: 300, prevents dense technical text overflow)
+        max_chars: Maximum characters per chunk (default: 350, prevents dense technical text overflow while maintaining audio continuity)
 
     Returns:
         List of text chunks
@@ -19,11 +19,16 @@ def chunk_text(s: str, max_chars: int = 300, max_words: int = 70) -> list[str]:
         Dual constraints ensure both word and character limits are respected, preventing
         token overflow with max_tokens=2500 on HuggingFace backend.
 
+        Character limit of 350 chosen to:
+        - Prevent dense technical text from exceeding token budget
+        - Minimize chunk fragmentation (fewer cuts = better audio continuity)
+        - Balance between safety margin and voice consistency
+
         Emotion tags like <laugh>, <cry>, <angry> are preserved within chunks.
 
-        Example token budgets:
+        Example token budgets with max_chars=350:
         - 70 words × 5 chars/word × 5 tokens/char = ~1,750 tokens (safe margin with 2500 limit)
-        - 70 words × 8 chars/word × 5 tokens/char = ~2,800 tokens (EXCEEDS 2500 - caught by max_chars)
+        - 70 words × 8 chars/word (280 chars, under 350 limit) × 5 tokens/char = ~2,100 tokens (safe)
     """
     if not s:
         return []
