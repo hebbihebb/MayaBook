@@ -36,7 +36,7 @@ def _ensure_models(model_path: str):
                 load_in_4bit=True,
                 bnb_4bit_use_double_quant=True,
                 bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_compute_dtype=torch.float16,  # GTX 2070 (Turing CC 7.5) has native FP16 support, not bfloat16
             )
 
             # Load model with 4-bit quantization on GPU
