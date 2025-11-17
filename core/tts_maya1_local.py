@@ -38,6 +38,7 @@ def _ensure_models(model_path: str, n_ctx: int = 4096, n_gpu_layers: int | None 
         seed=0,
         logits_all=False,
         n_gpu_layers=-1 if n_gpu_layers is None else n_gpu_layers,
+        flash_attn=True,  # Enable FlashAttention 1.x for GTX 2070 (Turing CC 7.5) - reduces VRAM pressure and accelerates prompt processing
     )
     if _snac is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
