@@ -181,7 +181,7 @@ def synthesize_chunk_hf(
             temperature=temperature,
             top_p=top_p,
             do_sample=True,
-            repetition_penalty=1.1,  # Prevent token loops (from official implementation)
+            repetition_penalty=1.5,  # Stronger penalty (was 1.1) to prevent token loops and audio looping artifacts
             pad_token_id=tokenizer.eos_token_id,
             eos_token_id=CODE_END_TOKEN_ID,  # Stop at end of speech token (official way)
         )
