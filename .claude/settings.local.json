@@ -46,7 +46,9 @@
       "Bash(test_vllm_gguf.py )",
       "Bash(create_placeholders.py )",
       "Bash(test_archive/)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(git push:*)",
+      "Bash(ssh:*)"
     ],
     "deny": [],
     "ask": []
