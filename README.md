@@ -2,6 +2,11 @@
 
 **EPUB → TTS → M4B Audiobook Generator**
 
+[![Status](https://img.shields.io/badge/status-production__ready-green?style=for-the-badge)](https://github.com/hebbihebb/MayaBook)
+[![Python Version](https://img.shields.io/badge/python-3.10+-blue.svg?style=for-the-badge)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-Not%20Specified-red?style=for-the-badge)](./LICENSE)
+[![GPU](https://img.shields.io/badge/GPU-NVIDIA%20CUDA-76B900?style=for-the-badge&logo=nvidia)](https://developer.nvidia.com/cuda-zone)
+
 MayaBook is a local EPUB-to-audiobook converter that transforms your digital books into high-quality narrated audiobooks. Using the **[Maya1](https://huggingface.co/maya-research/maya1)** voice model and GPU-accelerated inference, it produces professional M4B/WAV files with expressive, natural-sounding speech.
 
 ![MayaBook GUI](screenshot.jpg)
