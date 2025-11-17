@@ -66,10 +66,18 @@ Output: book.m4b or book.wav
   - **RMS Quality Check**: Retries up to 3 times if audio RMS < 0.001
   - **Deterministic Seeding**: CRC32 hash of text + voice for reproducibility
   - **Token Extraction**: Handles llama-cpp-python response format changes
+  - **FlashAttention 1.x**: Enabled via `flash_attn=True` (GTX 2070 optimization)
 
 - **Critical Fix (2025-11-13)**:
   - Added `llm.reset()` to prevent KV cache carryover between chunks
   - Previously, model state from chunk N affected chunk N+1, causing wrong speech generation
+
+- **Optimization (2025-11-17) - FlashAttention 1.x**:
+  - Enabled `flash_attn=True` in Llama initialization for GTX 2070 (Turing CC 7.5)
+  - Reduces VRAM pressure on KV cache by using memory-efficient attention implementation
+  - Accelerates prompt processing via fused kernel operations
+  - Optimal for batch size 1 autoregressive TTS generation (SDPA approach)
+  - **Impact**: Better memory efficiency + faster generation, no quality loss
 
 #### `core/tts_maya1_hf.py`
 - **Purpose**: HuggingFace Transformers-based TTS synthesis
@@ -79,6 +87,24 @@ Output: book.m4b or book.wav
   - Better emotion tag support
   - GPU acceleration via CUDA
   - CPU fallback (slow)
+
+- **Critical Fix (2025-11-17)**:
+  - Changed `bnb_4bit_compute_dtype` from `torch.bfloat16` to `torch.float16`
+  - GTX 2070 (Turing CC 7.5) lacks native bfloat16 support; uses native FP16 Tensor Cores instead
+  - Fixes silent numerical corruption causing gibberish/NaN output
+  - Enables fast hardware-accelerated computation
+
+- **Optimal Settings (Verified 2025-11-17)**:
+  - `temperature: 0.43` - Reduces sampling variance, prevents repetition
+  - `top_p: 0.90` - Stable nucleus sampling
+  - `max_tokens: 2500` - Allows complete sentences with natural breathing
+  - `repetition_penalty: 1.10` - Prevents token loops
+
+- **Emotion Tag Format (CRITICAL)**:
+  - ✅ **Correct**: `"The forest was quiet. <whisper> Something watched from shadows."`
+  - ❌ **Incorrect**: `"The forest was quiet. <whisper>Something watched</whisper>."`
+  - Use **single tags only** - closing tags cause repetition/looping
+  - Tag affects speech that comes **after** it, not before
 
 #### `core/tts_maya1_vllm.py` (NEW - 2025-11-16)
 - **Purpose**: High-performance TTS synthesis using vLLM inference engine
@@ -150,6 +176,43 @@ Output: book.m4b or book.wav
 **Cause**: 90-word chunks required ~2500 tokens, hitting `max_tokens` limit exactly
 **Fix**: Reduced default chunk size to 70 words (ensures ~1750 tokens max)
 **File**: `ui/main_window.py` line 111
+
+---
+
+## Critical Fixes (2025-11-17) - Hardware & Attention Optimization
+
+### Bug #4: HuggingFace Backend Silent Numerical Corruption
+**Symptom**: Gibberish/NaN audio output, repetition, inconsistent generation
+**Root Cause**: Using `torch.bfloat16` compute dtype on GTX 2070 (Turing CC 7.5)
+- GTX 2070 lacks native bfloat16 support (introduced in Ampere RTX 30 series)
+- bfloat16 either emulated in slow FP32 or causes silent precision loss
+- Research: "LLM Performance Optimization on GTX 2070" identified this as critical mismatch
+**Fix**: Changed `bnb_4bit_compute_dtype=torch.float16` (native FP16 Tensor Core support)
+**File**: `core/tts_maya1_hf.py` line 39
+**Impact**:
+- ✅ Clean, gibberish-free audio
+- ✅ Natural breathing and prosody
+- ✅ No repetition/looping with proper emotion tags
+- ✅ Fast hardware-accelerated FP16 computation
+
+### Optimization #1: Emotion Tag Format Issue (Not a Bug - By Design)
+**Finding**: Model outputs correctly with single tags but loops with closing tags
+**Root Cause**: Model architecture processes tags differently - single tag affects following text
+**Solution**: Documented correct format in emotion tag guidance
+- ✅ Correct: `"Text here. <emotion> more text that is emotional"`
+- ❌ Incorrect: `"Text here. <emotion>emotional text</emotion> normal text"`
+**File**: Updated in `core/tts_maya1_hf.py` documentation
+
+### Optimization #2: GGUF FlashAttention 1.x Disabled by Default
+**Finding**: llama-cpp-python supports FlashAttention 1.x but defaults to `flash_attn=False`
+**Impact**: Missing VRAM optimization opportunity on GTX 2070 (Turing-compatible)
+**Fix**: Enabled `flash_attn=True` in Llama initialization
+**File**: `core/tts_maya1_local.py` line 41
+**Benefits**:
+- Reduces KV cache VRAM pressure via memory-efficient attention
+- Fused kernel operations accelerate prompt processing
+- Critical for optimal performance with GGUF models
+- Especially important given GTX 2070's 8GB VRAM constraint
 
 ---
 
@@ -592,6 +655,31 @@ Audio Issue?
 
 ## Version History
 
+### v2.4 Hardware Optimization & Bug Fixes (2025-11-17) - HF Backend Restored + FlashAttention
+- ✅ **HuggingFace Backend FIXED**: Silent numerical corruption issue resolved
+  - **Root cause identified**: Using torch.bfloat16 on GTX 2070 (Turing, lacks native support)
+  - **Fix**: Changed bnb_4bit_compute_dtype to torch.float16 (native FP16 Tensor Core support)
+  - **Result**: Clean audio, no gibberish, proper emotion tag handling, natural breathing
+  - **Impact**: HuggingFace backend now **production-ready** (was downgraded in v2.3)
+  - **Testing**: 2/2 tests pass with optimal settings (temp=0.43, top_p=0.90, max_tokens=2500)
+  - **Source**: Identified via "LLM Performance Optimization on GTX 2070" research
+
+- ✅ **GGUF Backend Optimization**: FlashAttention 1.x enabled
+  - **Finding**: llama-cpp-python supports FlashAttention but defaults to disabled
+  - **Fix**: Enabled flash_attn=True in Llama initialization
+  - **Benefits**: VRAM pressure reduction, fused kernel acceleration, prompt processing speedup
+  - **Compatibility**: GTX 2070 (Turing CC 7.5) fully supports FlashAttention 1.x
+  - **Impact**: Better memory efficiency + faster generation, no quality loss
+
+- ✅ **Emotion Tag Format Documentation**: Clarified correct usage
+  - Single tags only (NOT opening/closing pairs)
+  - Tag affects text that follows it
+  - Prevents looping/repetition issues
+
+- ✅ **Both Backends Now Optimal**: HF and GGUF both using hardware-specific optimizations
+  - HF: torch.float16 (native FP16 Tensor Cores)
+  - GGUF: FlashAttention 1.x (memory-efficient attention)
+
 ### v2.3 Production Validation (2025-11-17) - Q4_K_M GGUF Ready
 - ✅ **Q4_K_M GGUF Testing Complete**: Comprehensive validation on RTX 2070
   - Individual chunk synthesis: 3 chunks tested, perfect quality
@@ -678,6 +766,6 @@ This is a personal project. For questions or contributions, refer to the GitHub 
 
 ---
 
-**Last Updated**: 2025-11-17 (v2.3)
+**Last Updated**: 2025-11-17 (v2.4)
 **Maintained By**: hebbihebb
 **AI Assistant**: Claude (Anthropic)
