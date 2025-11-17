@@ -148,17 +148,10 @@ def synthesize_chunk_hf(
     """
     model, tokenizer, snac_model = _ensure_models(model_path)
 
-    # Clear GPU cache to prevent KV cache state bleeding between chunks
-    # (Similar fix to llm.reset() in llama.cpp backend - see core/tts_maya1_local.py)
+    # Clear GPU cache to prevent VRAM fragmentation
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         logger.debug("Cleared GPU cache before generation")
-
-    # Reset model's internal KV cache (transformer attention state)
-    # This prevents state from previous chunk generation affecting current chunk
-    if hasattr(model, 'past_key_values'):
-        model.past_key_values = None
-    logger.debug("Reset model KV cache before generation")
 
     # Build prompt
     prompt = _build_prompt(voice_description, text)
