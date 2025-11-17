@@ -94,7 +94,7 @@ def main():
                 voice_description=voice_description,
                 temperature=0.43,
                 top_p=0.90,
-                max_tokens=2000,
+                max_tokens=2500,
             )
 
             logger.info(f"✅ Synthesis complete: {output_path}")

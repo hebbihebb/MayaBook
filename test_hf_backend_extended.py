@@ -92,11 +92,11 @@ def main():
     ]
 
     logger.info("=" * 80)
-    logger.info("HuggingFace Backend Extended Test (Optimized with Smart Chunking)")
+    logger.info("HuggingFace Backend Extended Test (Production Quality)")
     logger.info("=" * 80)
     logger.info(f"Model path: {model_path}")
-    logger.info(f"Test settings: temp=0.43, top_p=0.90, max_tokens=2000")
-    logger.info(f"Chunking: max_words=70, max_chars=350 (dual-constraint)")
+    logger.info(f"Test settings: temp=0.43, top_p=0.90, max_tokens=2500")
+    logger.info(f"Chunking: max_words=70, max_chars=350 (smart dual-constraint)")
     logger.info("")
 
     results = []
@@ -115,7 +115,7 @@ def main():
                 voice_description=test_case['voice'],
                 temperature=0.43,
                 top_p=0.90,
-                max_tokens=2000,
+                max_tokens=2500,
             )
 
             # Diagnose output

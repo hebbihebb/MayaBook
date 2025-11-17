@@ -130,7 +130,7 @@ def synthesize_chunk_hf(
     voice_description: str,
     temperature: float = 0.4,
     top_p: float = 0.9,
-    max_tokens: int = 2000,
+    max_tokens: int = 2500,
 ) -> str:
     """
     Synthesize audio using HuggingFace Transformers model
@@ -141,7 +141,7 @@ def synthesize_chunk_hf(
         voice_description: Natural language voice description
         temperature: Sampling temperature (0.3-0.5 recommended)
         top_p: Top-p sampling (0.9 recommended)
-        max_tokens: Maximum tokens to generate (2000 recommended for chunked text with dual-constraint chunking)
+        max_tokens: Maximum tokens to generate (2500 optimal with smart chunking)
 
     Returns:
         Path to generated WAV file
