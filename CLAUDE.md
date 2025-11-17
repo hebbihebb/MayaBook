@@ -760,6 +760,71 @@ Audio Issue?
 
 ---
 
+## Research & Reference Code Analysis (2025-11-17)
+
+### External Project Learning ("learn" folder)
+During development, a related ComfyUI-based Maya1 TTS project was analyzed for architectural insights. Three reference implementations were reviewed:
+
+#### **model_wrapper.py** - Advanced Model Management
+**Key Patterns Identified:**
+1. **Smart Cache Invalidation**: Detects when dtype or attention mechanism changes and automatically clears/reloads
+   - Useful for multi-session workflows where settings change frequently
+2. **Model Configuration Verification**: Post-load verification that requested settings actually applied
+   - Could catch dtype/attention misconfigurations at startup
+3. **Sophisticated VRAM Cleanup**: Uses ComfyUI's native model management (mm.unload_all_models(), soft_empty_cache())
+   - More aggressive than standard torch.cuda.empty_cache()
+
+**Critical Bug Found in Reference:**
+- Line 322: `bnb_4bit_compute_dtype=torch_dtype` where `torch_dtype=torch.bfloat16` (line 117)
+- **Same bug we fixed in MayaBook!** Their code hasn't addressed hardware mismatch for GTX 2070
+- Our implementation is more robust
+
+**Recommended Adoptions:**
+- ⭐ Model verification system (could add to startup checks)
+- ⭐ Cache invalidation detection (useful for GUI where settings change)
+- ⭐ Aggressive VRAM cleanup for better memory management
+
+#### **snac_decoder.py** - SNAC Audio Codec
+**Insights:**
+- Uses explicit token range constants: `SNAC_TOKEN_START=128266, SNAC_TOKEN_END=156937`
+- Class-based wrapper pattern with model caching (matches our approach)
+- Includes frame-level diagnostics (e.g., frame count estimation)
+
+**Assessment:** Our implementation equivalent; both approaches valid
+
+#### **chunking.py** - Text Chunking Strategy
+**Their Approach (Character-Based):**
+- Max 200 characters per chunk (vs. our 70 words)
+- Hierarchical splitting: Sentences → Clauses → Words
+- Token estimation: word_count * 25
+
+**Our Approach (Word-Based):**
+- 70 words per chunk (proven optimal for token limit ~1750)
+- Sentence-aware with comma splitting
+- Token estimation: ~5 per character (equivalent)
+- Simpler, already tested and working well
+
+**Assessment:** Keep current implementation - simpler and proven effective
+
+### Future Enhancement Candidates (Priority Order)
+1. **High Priority**: Model configuration verification on startup
+   - Verify torch.float16 actually loaded
+   - Verify flash_attn enabled in GGUF backend
+   - Detect dtype/attention changes and handle appropriately
+
+2. **Medium Priority**: Improved VRAM management
+   - Aggressive cleanup with multi-step approach (ComfyUI pattern)
+   - Better handling of model reloading between chunks
+
+3. **Low Priority**: Additional Attention Mechanisms
+   - SageAttention support (experimental, requires sageattention package)
+   - FlashAttention 2 for future GPU architectures
+
+4. **Not Recommended**: Character-based chunking
+   - Current word-based approach is superior for this use case
+
+---
+
 ## Contact & Contributions
 
 This is a personal project. For questions or contributions, refer to the GitHub repository.
