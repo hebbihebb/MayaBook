@@ -154,6 +154,12 @@ def synthesize_chunk_hf(
         torch.cuda.empty_cache()
         logger.debug("Cleared GPU cache before generation")
 
+    # Reset model's internal KV cache (transformer attention state)
+    # This prevents state from previous chunk generation affecting current chunk
+    if hasattr(model, 'past_key_values'):
+        model.past_key_values = None
+    logger.debug("Reset model KV cache before generation")
+
     # Build prompt
     prompt = _build_prompt(voice_description, text)
     logger.debug(f"Prompt: {prompt[:200]}...")
