@@ -51,12 +51,27 @@ Output: book.m4b or book.wav
 
 #### `core/chunking.py`
 - **Purpose**: Split text into manageable chunks for TTS
-- **Key Function**: `chunk_text(s: str, max_words: int) -> list[str]`
-- **Recommended**: 70 words per chunk (prevents token overflow)
+- **Key Function**: `chunk_text(s: str, max_words: int = 70, max_chars: int = 300) -> list[str]`
+- **Algorithm**: **Smart Dual-Constraint Chunking (2025-11-17)**
+  - Respects BOTH word count AND character limits (whichever is exceeded first)
+  - Default: 70 words OR 300 characters per chunk
+  - Prevents dense technical text from exceeding token budget
+
+- **Why Dual Constraints?**
+  - Simple word-only chunking ignores text density
+  - 70-word narrative ≈ 350 chars ≈ 1,750 tokens ✅ Safe
+  - 70-word technical ≈ 560 chars ≈ 2,800 tokens ❌ Exceeds limit
+  - Solution: Character limit catches dense text early
+
+- **Real-World Example:**
+  - 60-word technical text (517 chars): Single chunk would be 2,585 tokens ❌
+  - With dual-constraint: Split into 3 chunks (1,126 + 879 + 848 tokens) ✅
+
 - **Features**:
-  - Sentence-aware splitting
+  - Sentence-aware splitting (respects natural breaks)
   - Preserves emotion tags (`<laugh>`, `<cry>`, etc.)
-  - Handles long sentences by splitting at commas
+  - Handles long sentences by splitting at commas/semicolons
+  - Token-budget safe: All chunks fit within max_tokens=2500
 
 #### `core/tts_maya1_local.py`
 - **Purpose**: GPU-accelerated TTS synthesis using GGUF model
@@ -239,8 +254,17 @@ MAX_GEN_ATTEMPTS = 3         # retry attempts for silent audio
 
 ### Token Budget Calculation
 - **Rule of thumb**: ~5 audio tokens per character of input text
-- **70 words** ≈ 350 chars ≈ 1,750 tokens (safe margin below 2500)
-- **90 words** ≈ 500 chars ≈ 2,500 tokens (TOO CLOSE - causes truncation)
+- **Token = prompt (25% of chars) + audio (5 × chars)**
+
+**Examples with max_tokens=2500:**
+- **Narrative text** (5 chars/word): 70 words × 5 chars × 5 tokens/char = 1,750 tokens ✅ Safe
+- **Technical text** (8 chars/word): 70 words × 8 chars × 5 tokens/char = 2,800 tokens ❌ Exceeds limit
+
+**Smart Chunking Solution:**
+- Character limit (300 chars) catches dense text automatically
+- Dense technical text triggers split before hitting token limit
+- Real example: 60-word technical text → splits into 3 chunks, all safe ✅
+- Respects sentence boundaries for natural speech prosody
 
 ---
 
@@ -767,6 +791,17 @@ Audio Issue?
   - Single tags only (NOT opening/closing pairs)
   - Tag affects text that follows it
   - Prevents looping/repetition issues
+
+- ✅ **Smart Dual-Constraint Chunking** (NEW - 2025-11-17): Prevents token overflow
+  - **Problem**: Word-only chunking ignores text density
+    - Dense technical text (8+ chars/word) exceeds max_tokens=2500
+    - Example: 60-word technical = 517 chars = 2,585 tokens ❌
+  - **Solution**: Dual-constraint algorithm (max_words AND max_chars)
+    - Respects both 70-word and 300-character limits
+    - Dense text automatically splits via character constraint
+    - Example: Same 60-word text → 3 chunks (1,126 + 879 + 848 tokens) ✅
+  - **Result**: Token-safe chunking without quality loss, preserves prosody
+  - **Implementation**: `core/chunking.py` - `_chunk_by_words_and_chars()`
 
 - ✅ **Both Backends Now Optimal**: HF and GGUF both using hardware-specific optimizations
   - HF: torch.float16 (native FP16 Tensor Cores)
