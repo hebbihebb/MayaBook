@@ -1,0 +1,63 @@
+2025-11-17 05:47:56,856 - root - INFO - Extracting chapters and metadata from assets/test/Zero Combat, Max Crafting_ The - GordanWizard.epub...
+/home/hebbi/miniconda3/lib/python3.13/site-packages/ebooklib/epub.py:1410: FutureWarning: This search incorrectly ignores the root element, and will be fixed in a future version.  If you rely on the current behaviour, change it to './/xmlns:rootfile[@media-type]'
+  for root_file in tree.findall('//xmlns:rootfile[@media-type]', namespaces={'xmlns': NAMESPACES['CONTAINERNS']}):
+2025-11-17 05:47:56,863 - root - INFO - Extracted metadata: Zero Combat, Max Crafting: The Unkillable Saint
+2025-11-17 05:47:56,863 - root - INFO - Found 18 chapters in TOC
+2025-11-17 05:47:56,996 - root - INFO - Text extraction successful. Found 18 chapters.
+====================================================================================================
+SINGLE CHUNK TEST - CHUNK 1
+====================================================================================================
+
+Chunk 1 Text (54 words):
+Riven Ashmark spent twelve years doing what no other player dared: ignoring every dungeon, skipping every raid, and maxing out all twelve crafting professions in The Empyrean Dawning. No combat. No glory. Just the quiet satisfaction of making things properly.
+
+Then she woke up in her workshop. For real.
+
+Two hundred years have passed.
+
+2025-11-17 05:47:57,013 - __main__ - INFO - ====================================================================================================
+2025-11-17 05:47:57,013 - __main__ - INFO - Synthesizing Chunk 1: 54 words
+2025-11-17 05:47:57,013 - __main__ - INFO - ====================================================================================================
+2025-11-17 05:47:57,013 - core.tts_maya1_hf - INFO - Loading HuggingFace model from assets/models/maya1_4bit_safetensor...
+2025-11-17 05:47:57,050 - core.tts_maya1_hf - INFO - Loading model on CUDA with bitsandbytes 4-bit quantization
+/home/hebbi/miniconda3/lib/python3.13/site-packages/transformers/quantizers/auto.py:239: UserWarning: You passed `quantization_config` or equivalent parameters to `from_pretrained` but the model you're loading already has a `quantization_config` attribute. The `quantization_config` from the model will be used.
+  warnings.warn(warning_msg)
+2025-11-17 05:47:57,341 - bitsandbytes.cextension - DEBUG - Loading bitsandbytes native library from: /home/hebbi/miniconda3/lib/python3.13/site-packages/bitsandbytes/libbitsandbytes_cuda128.so
+2025-11-17 05:47:59,596 - accelerate.utils.modeling - INFO - We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+2025-11-17 05:48:09,672 - core.tts_maya1_hf - INFO - Using bitsandbytes 4-bit GPU kernels
+2025-11-17 05:48:09,673 - core.tts_maya1_hf - INFO - Model device: cuda:0
+2025-11-17 05:48:09,674 - core.tts_maya1_hf - INFO - Loading tokenizer...
+2025-11-17 05:48:19,298 - core.tts_maya1_hf - INFO - Tokenizer loaded
+2025-11-17 05:48:19,298 - core.tts_maya1_hf - INFO - Loading SNAC codec on cuda...
+2025-11-17 05:48:19,301 - urllib3.connectionpool - DEBUG - Starting new HTTPS connection (1): huggingface.co:443
+2025-11-17 05:48:20,026 - urllib3.connectionpool - DEBUG - https://huggingface.co:443 "HEAD /hubertsiuzdak/snac_24khz/resolve/main/config.json HTTP/1.1" 307 0
+2025-11-17 05:48:20,103 - urllib3.connectionpool - DEBUG - https://huggingface.co:443 "HEAD /api/resolve-cache/models/hubertsiuzdak/snac_24khz/d73ad176a12188fcf4f360ba3bf2c2fbbe8f58ec/config.json HTTP/1.1" 200 0
+2025-11-17 05:48:20,270 - urllib3.connectionpool - DEBUG - https://huggingface.co:443 "HEAD /hubertsiuzdak/snac_24khz/resolve/main/pytorch_model.bin HTTP/1.1" 302 0
+2025-11-17 05:48:20,892 - core.tts_maya1_hf - INFO - SNAC codec loaded
+2025-11-17 05:48:20,893 - core.tts_maya1_hf - DEBUG - Prompt: <description="A mature female voice, clear and expressive, with good pacing"> Riven Ashmark spent twelve years doing what no other player dared: ignoring every dungeon, skipping every raid, and maxing...
+2025-11-17 05:48:20,894 - core.tts_maya1_hf - DEBUG - Full prompt: 92 tokens
+2025-11-17 05:48:20,894 - core.tts_maya1_hf - INFO - Generation started on GPU device cuda:0
+2025-11-17 05:48:20,895 - core.tts_maya1_hf - DEBUG - Input shape: torch.Size([1, 92]), device: cuda:0
+2025-11-17 05:49:57,815 - core.tts_maya1_hf - DEBUG - Generated 1786 tokens
+2025-11-17 05:49:57,815 - core.tts_maya1_hf - DEBUG - First 20 generated token IDs: [132199, 135924, 137637, 142900, 146334, 150530, 156860, 130907, 136228, 136619, 142292, 145636, 150545, 155379, 128376, 135175, 136797, 143195, 146186, 151460]
+2025-11-17 05:49:57,815 - core.tts_maya1_hf - DEBUG - Last 20 generated token IDs: [136720, 143445, 145657, 149268, 153999, 129297, 134887, 140522, 141587, 145752, 152398, 153596, 128868, 132970, 140385, 140978, 147259, 150259, 154120, 128258]
+2025-11-17 05:49:57,816 - core.tts_maya1_hf - DEBUG - Extracted 1785 SNAC audio tokens
+2025-11-17 05:49:57,816 - core.tts_maya1_hf - DEBUG - Unpacked SNAC: L1=255, L2=510, L3=1020 codes
+2025-11-17 05:49:58,436 - core.tts_maya1_hf - DEBUG - Audio shape before processing: (1, 1, 522240)
+2025-11-17 05:49:58,436 - core.tts_maya1_hf - DEBUG - Audio shape after squeeze: (522240,)
+2025-11-17 05:49:58,436 - core.tts_maya1_hf - DEBUG - Final audio shape: (520192,), duration: 21.67s
+
+✓ Generated WAV: /tmp/tmpnergfpmr.wav
+  Size: 1016.0 KB
+  Duration: 21.67s
+  Sample rate: 24000 Hz
+  RMS: 0.091902
+  Shape: (520192,)
+
+====================================================================================================
+SINGLE CHUNK TEST COMPLETE
+====================================================================================================
+
+Check the output WAV file to hear if it matches the text above.
+Output: /tmp/tmpnergfpmr.wav
+Log: test_single_chunk.log

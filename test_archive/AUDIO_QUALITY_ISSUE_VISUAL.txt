@@ -1,0 +1,126 @@
+================================================================================
+                 AUDIO QUALITY ISSUE - VISUAL BREAKDOWN
+================================================================================
+
+PROBLEM STATEMENT:
+"The audio is mostly gibberish and does not reflect the text provided"
+
+================================================================================
+                      SENTENCES HEARD IN 5-HOUR FILE
+================================================================================
+
+1. "We should probably eat something first," she said.
+2. "I'm told that's what people do before important meetings."
+3. "Do you actually need to eat?"
+4. "Garden decide just as appointed..." [Garbled/mispronounced]
+5. "...called deson..." [Unclear name/word]
+
+================================================================================
+                         LOCATION IN EPUB TEXT
+================================================================================
+
+Character Position: 168,195 out of 422,255 total characters
+
+Percentage Through: 39.8%  (almost 40% of the way through)
+
+Context:
+  BEFORE (chapter content):
+    "Riven turned from the window. Looked at him for a long moment.
+     Politics or not...""
+
+  FOUND:
+    "Then we should probably eat something first," she said. "I'm told that's 
+     what people do before important meetings."
+     "Do you actually need to eat?"
+     "No. But you do."
+
+  AFTER:
+    "Kael grinned. 'Fair point. I'll grab something from the market...'"
+
+
+================================================================================
+                      WHICH TEXT CHUNK IS THIS?
+================================================================================
+
+Chunk Number: 486 (of 1,147 total)
+
+Chunks Before This: 1-485
+Chunks After This:  487-1,147
+
+Key Finding: CHUNKS 1-485 PRODUCE GIBBERISH
+             CHUNKS 486+ PRODUCE INTELLIGIBLE AUDIO
+
+================================================================================
+                      WHAT THIS MEANS
+================================================================================
+
+STRESS TEST TIMELINE:
+┌─────────────────────────────────────────────────────────────────┐
+│ Chunk 1                  Chunks 1-485               Chunk 486   │
+│ (53 words)               (40% of book)              (onwards)   │
+│  "Riven Ashmark          All produce                Produces    │
+│   spent twelve            GIBBERISH                 COHERENT    │
+│   years..."              audio                      AUDIO       │
+│                                                                  │
+│◄──── First 2 hours ────►◄──── ~3 more hours ────►◄─ 2+ hours ─►│
+│ (Generated OK)          (All corrupted!)          (OK from here)│
+└─────────────────────────────────────────────────────────────────┘
+
+5-HOUR CONCATENATED FILE LISTENING EXPERIENCE:
+  - First ~2 hours: Silence or unintelligible noise
+  - Around 2:00 mark: First coherent sentence heard
+  - Rest of file: Mostly coherent (probably)
+
+================================================================================
+                         ROOT CAUSE
+================================================================================
+
+HuggingFace Transformers Model KV Cache State Bleeding
+
+  CHUNK 1 GENERATION:
+    GPU loads model → Generate tokens → Model state accumulates in VRAM
+
+  CHUNK 2 GENERATION:
+    GPU has residual state from Chunk 1 → Generate more tokens → State grows
+
+  CHUNK 3-485 GENERATION:
+    State continues accumulating → Generation gets worse
+    Eventually model's internal state is so corrupted that output is gibberish
+
+  CHUNK 486+ GENERATION:
+    ??? Model state resets somehow or reaches a new equilibrium
+    Audio becomes intelligible again
+
+
+================================================================================
+                           THE FIX
+================================================================================
+
+Added to core/tts_maya1_hf.py (line 151-155):
+
+  if torch.cuda.is_available():
+      torch.cuda.empty_cache()
+      logger.debug("Cleared GPU cache before generation")
+
+This clears the GPU memory cache between EVERY chunk generation, preventing
+state from one chunk from affecting the next chunk.
+
+Same approach used successfully in llama.cpp backend (core/tts_maya1_local.py).
+
+
+================================================================================
+                      VERIFICATION NEEDED
+================================================================================
+
+✓ Fix has been implemented
+□ Test chunk 1 in isolation (check if still gibberish or now OK)
+□ Test chunk 100 in isolation
+□ Test chunk 485 in isolation
+□ Test chunk 486 in isolation
+□ Re-run stress test on first 100 chunks
+□ Compare audio quality before/after fix
+□ Generate new M4B file with fix applied
+□ Validate end-to-end quality
+
+
+================================================================================
