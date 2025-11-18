@@ -171,6 +171,30 @@ def synthesize_chunk_hf(
     logger.info(f"Generation started on GPU device {device}" if device.type == "cuda" else f"Generation started on {device}")
     logger.debug(f"Input shape: {input_ids.shape}, device: {input_ids.device}")
 
+    # Ensure no KV cache is carried across chunks
+    use_cache = True
+    if hasattr(model, "flush_kv_cache"):
+        logger.debug("Flushing model KV cache via flush_kv_cache()")
+        model.flush_kv_cache()
+    elif hasattr(model, "generation_cache"):
+        cache = getattr(model, "generation_cache")
+        if cache is not None:
+            if hasattr(cache, "reset"):
+                logger.debug("Resetting model generation_cache via reset()")
+                cache.reset()
+            elif hasattr(cache, "flush"):
+                logger.debug("Flushing model generation_cache via flush()")
+                cache.flush()
+            elif hasattr(cache, "clear"):
+                logger.debug("Clearing model generation_cache via clear()")
+                cache.clear()
+            else:
+                logger.debug("Generation cache present but no reset/flush/clear method; disabling use_cache for generation")
+                use_cache = False
+    else:
+        logger.debug("No cache flush available; disabling use_cache for generation")
+        use_cache = False
+
     # Generate - use CODE_END as EOS (as per official implementation)
     with torch.inference_mode():
         output = model.generate(
@@ -183,6 +207,7 @@ def synthesize_chunk_hf(
             repetition_penalty=1.1,
             pad_token_id=tokenizer.eos_token_id,
             eos_token_id=CODE_END_TOKEN_ID,  # Stop at end of speech token (official way)
+            use_cache=use_cache,
         )
 
     # Extract generated tokens
