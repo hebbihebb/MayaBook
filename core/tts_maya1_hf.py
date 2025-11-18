@@ -7,6 +7,7 @@ import tempfile
 import torch
 import soundfile as sf
 import logging
+from dataclasses import dataclass
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from snac import SNAC
 from .maya1_constants import (
@@ -88,22 +89,68 @@ def _build_prompt(description: str, text: str) -> str:
 
 def _extract_snac_ids(token_ids: list[int]) -> list[int]:
     """Extract SNAC audio tokens from generated token IDs"""
-    try:
-        end = token_ids.index(CODE_END_TOKEN_ID)
-    except ValueError:
-        end = len(token_ids)
-    return [t for t in token_ids[:end] if SNAC_MIN_ID <= t <= SNAC_MAX_ID]
+    return _prepare_snac_frames(token_ids).snac_ids
+
+@dataclass
+class SnacFramePreparation:
+    snac_ids: list[int]
+    code_end_index: int | None
+    residual_before_padding: int
+    padded_tokens: int
+    discarded_tokens: int
+
+def _prepare_snac_frames(gen_ids: list[int]) -> SnacFramePreparation:
+    """
+    Extract SNAC tokens, detect early CODE_END, and pad partial frames.
+    """
+    code_end_index = next((i for i, t in enumerate(gen_ids) if t == CODE_END_TOKEN_ID), None)
+    if code_end_index is not None:
+        logger.info(
+            "CODE_END_TOKEN_ID encountered at generated index %d", code_end_index
+        )
+    else:
+        logger.info("CODE_END_TOKEN_ID not found in generated tokens")
+
+    cutoff = code_end_index if code_end_index is not None else len(gen_ids)
+    snac_candidates = [t for t in gen_ids[:cutoff] if SNAC_MIN_ID <= t <= SNAC_MAX_ID]
+
+    residual = len(snac_candidates) % SNAC_TOKENS_PER_FRAME
+    padded_tokens = 0
+    discarded_tokens = 0
+
+    if residual:
+        logger.warning(
+            "Partial SNAC frame detected: %d residual token(s) before padding",
+            residual,
+        )
+        if code_end_index is not None:
+            logger.warning(
+                "CODE_END_TOKEN_ID arrived before completing a full SNAC frame; padding final frame"
+            )
+        if snac_candidates:
+            padded_tokens = SNAC_TOKENS_PER_FRAME - residual
+            snac_candidates.extend([snac_candidates[-1]] * padded_tokens)
+            logger.info(
+                "Padded final SNAC frame with %d token(s) using last available token",
+                padded_tokens,
+            )
+        else:
+            discarded_tokens = residual
+
+    return SnacFramePreparation(
+        snac_ids=snac_candidates,
+        code_end_index=code_end_index,
+        residual_before_padding=residual,
+        padded_tokens=padded_tokens,
+        discarded_tokens=discarded_tokens,
+    )
 
 def _unpack_snac_from_7(snac_ids: list[int]):
     """
     Unpack 7-token SNAC frames into 3-level hierarchical codes.
     Frame structure: [L1, L2a, L3a, L3b, L2b, L3c, L3d]
     """
-    if snac_ids and snac_ids[-1] == CODE_END_TOKEN_ID:
-        snac_ids = snac_ids[:-1]
-
     frames = len(snac_ids) // SNAC_TOKENS_PER_FRAME
-    snac_ids = snac_ids[:frames * SNAC_TOKENS_PER_FRAME]
 
     if frames == 0:
         return [[], [], []]
@@ -131,6 +178,7 @@ def synthesize_chunk_hf(
     temperature: float = 0.4,
     top_p: float = 0.9,
     max_tokens: int = 2500,
+    trim_samples: int | None = 512,
 ) -> str:
     """
     Synthesize audio using HuggingFace Transformers model
@@ -142,6 +190,7 @@ def synthesize_chunk_hf(
         temperature: Sampling temperature (0.3-0.5 recommended)
         top_p: Top-p sampling (0.9 recommended)
         max_tokens: Maximum tokens to generate (2500 optimal with smart chunking)
+        trim_samples: Number of initial samples to trim from decoded audio (None to disable)
 
     Returns:
         Path to generated WAV file
@@ -191,9 +240,16 @@ def synthesize_chunk_hf(
     logger.debug(f"First 20 generated token IDs: {gen_ids[:20]}")
     logger.debug(f"Last 20 generated token IDs: {gen_ids[-20:]}")
 
-    # Extract SNAC tokens
-    snac_ids = _extract_snac_ids(gen_ids)
-    logger.debug(f"Extracted {len(snac_ids)} SNAC audio tokens")
+    # Extract SNAC tokens with instrumentation and padding
+    snac_prep = _prepare_snac_frames(gen_ids)
+    snac_ids = snac_prep.snac_ids
+    logger.info(
+        "SNAC extraction complete: %d tokens (residual before padding=%d, padded=%d, discarded=%d)",
+        len(snac_ids),
+        snac_prep.residual_before_padding,
+        snac_prep.padded_tokens,
+        snac_prep.discarded_tokens,
+    )
 
     # Unpack SNAC codes
     L1, L2, L3 = _unpack_snac_from_7(snac_ids)
@@ -225,8 +281,9 @@ def synthesize_chunk_hf(
         audio = audio[0]
 
     # Trim initial noise
-    if len(audio) > 2048:
-        audio = audio[2048:]
+    if trim_samples is not None and trim_samples > 0 and len(audio) > trim_samples:
+        logger.info("Trimming first %d samples from decoded audio", trim_samples)
+        audio = audio[trim_samples:]
 
     logger.debug(f"Final audio shape: {audio.shape}, duration: {len(audio)/24000:.2f}s")
 
