@@ -10,7 +10,7 @@ import os
 import hashlib
 import logging
 from pathlib import Path
-from .tts_maya1_local import synthesize_chunk_local
+from .tts_maya1_hf import synthesize_chunk_hf
 from .voice_presets import PREVIEW_TEXT
 
 logger = logging.getLogger(__name__)
@@ -90,8 +90,6 @@ def generate_voice_preview(
     model_path: str,
     temperature: float = 0.45,
     top_p: float = 0.92,
-    n_ctx: int = 4096,
-    n_gpu_layers: int = -1,
     force_regenerate: bool = False,
 ) -> str:
     """
@@ -102,8 +100,6 @@ def generate_voice_preview(
         model_path: Path to the TTS model file
         temperature: Synthesis temperature parameter (default: 0.45)
         top_p: Synthesis top_p parameter (default: 0.92)
-        n_ctx: Model context window size (default: 4096)
-        n_gpu_layers: Number of GPU layers to offload (default: -1 = all)
         force_regenerate: If True, bypass cache and regenerate (default: False)
 
     Returns:
@@ -131,15 +127,13 @@ def generate_voice_preview(
 
     try:
         # Synthesize preview using the same TTS engine as main pipeline
-        temp_wav = synthesize_chunk_local(
+        temp_wav = synthesize_chunk_hf(
             model_path=model_path,
             text=PREVIEW_TEXT,
             voice_description=voice_description,
             temperature=temperature,
             top_p=top_p,
             max_tokens=2500,  # Preview text is ~70 words, should fit comfortably
-            n_ctx=n_ctx,
-            n_gpu_layers=n_gpu_layers,
         )
 
         # Move temp file to cache location

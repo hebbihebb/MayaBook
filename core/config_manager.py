@@ -15,7 +15,7 @@ DEFAULT_CONFIG = {
     'last_used': {
         'epub_path': '',
         'cover_path': '',
-        'model_path': 'assets/models/maya1.i1-Q5_K_M.gguf',
+        'model_path': 'assets/models/maya1_full',
         'output_folder': str(Path.home() / 'MayaBook_Output'),
     },
     'recent_files': {
@@ -24,13 +24,10 @@ DEFAULT_CONFIG = {
         'models': [],
     },
     'gui_settings': {
-        'model_type': 'gguf',
-        'n_ctx': 4096,
-        'n_gpu_layers': -1,
         'temperature': 0.45,
         'top_p': 0.92,
         'chunk_size': 70,
-        'gap_size': 0.25,
+        'gap_size': 0.0,
         'output_format': 'm4b',
         'use_chapters': True,
         'save_separately': False,
@@ -161,7 +158,7 @@ class ConfigManager:
 
 def find_default_model() -> Optional[str]:
     """
-    Search for GGUF model in standard locations
+    Search for HuggingFace model directory in standard locations
 
     Returns:
         Path to first found model, or None
@@ -176,11 +173,11 @@ def find_default_model() -> Optional[str]:
         if not base_path.exists():
             continue
 
-        # Look for any .gguf file
-        gguf_files = list(base_path.glob('*.gguf'))
-        if gguf_files:
-            logger.info(f"Found default model: {gguf_files[0]}")
-            return str(gguf_files[0])
+        # Look for HF model directory (config.json + model shards)
+        for candidate in base_path.iterdir():
+            if candidate.is_dir() and (candidate / "config.json").exists():
+                logger.info(f"Found default model directory: {candidate}")
+                return str(candidate)
 
     return None
 
@@ -262,7 +259,7 @@ def get_smart_defaults() -> Dict[str, str]:
         }
     """
     defaults = {
-        'model_path': find_default_model() or 'assets/models/maya1.i1-Q5_K_M.gguf',
+        'model_path': find_default_model() or 'assets/models/maya1_full',
         'epub_path': find_default_epub() or '',
         'cover_path': '',
         'output_folder': str(Path.home() / 'MayaBook_Output'),
@@ -283,7 +280,7 @@ BUILTIN_PROFILES = {
         'temperature': 0.45,
         'top_p': 0.92,
         'chunk_size': 70,
-        'gap_size': 0.25,
+        'gap_size': 0.0,
         'chapter_silence': 2.0,
         'voice_description': 'A female speaker with a warm, calm, and clear voice, delivering the narration in a standard American English accent. Her tone is engaging and pleasant, suitable for long listening sessions.',
     },
@@ -291,7 +288,7 @@ BUILTIN_PROFILES = {
         'temperature': 0.35,
         'top_p': 0.88,
         'chunk_size': 80,
-        'gap_size': 0.3,
+        'gap_size': 0.0,
         'chapter_silence': 2.5,
         'voice_description': 'A clear, professional male voice with precise enunciation and measured pacing. American accent with authoritative yet approachable tone, suitable for educational content.',
     },
@@ -299,7 +296,7 @@ BUILTIN_PROFILES = {
         'temperature': 0.5,
         'top_p': 0.95,
         'chunk_size': 50,
-        'gap_size': 0.5,
+        'gap_size': 0.0,
         'chapter_silence': 3.0,
         'voice_description': 'An expressive female voice with dramatic pauses and emotional depth. Warm British accent, suitable for poetic and literary works with rich language.',
     },
@@ -307,7 +304,7 @@ BUILTIN_PROFILES = {
         'temperature': 0.48,
         'top_p': 0.93,
         'chunk_size': 60,
-        'gap_size': 0.4,
+        'gap_size': 0.0,
         'chapter_silence': 2.0,
         'voice_description': 'A bright, energetic female voice with playful inflection and clear diction. Young and cheerful tone, perfect for children\'s stories and young adult fiction.',
     },
@@ -315,7 +312,7 @@ BUILTIN_PROFILES = {
         'temperature': 0.3,
         'top_p': 0.85,
         'chunk_size': 90,
-        'gap_size': 0.35,
+        'gap_size': 0.0,
         'chapter_silence': 2.0,
         'voice_description': 'A mature, authoritative male voice with formal diction and steady pacing. Deep, clear tone suitable for academic texts, research papers, and technical documentation.',
     },
@@ -323,7 +320,7 @@ BUILTIN_PROFILES = {
         'temperature': 0.42,
         'top_p': 0.90,
         'chunk_size': 65,
-        'gap_size': 0.3,
+        'gap_size': 0.0,
         'chapter_silence': 2.5,
         'voice_description': 'A low, mysterious female voice with subtle tension and dramatic pacing. Hushed and intense tone, perfect for suspense, thrillers, and mystery novels.',
     },

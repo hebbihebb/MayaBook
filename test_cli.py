@@ -11,16 +11,14 @@ def main():
     parser = argparse.ArgumentParser(description='Test MayaBook TTS pipeline from CLI')
     parser.add_argument('--text', type=str, default="Hello, this is a test of the Maya1 text to speech system.",
                         help='Text to synthesize')
-    parser.add_argument('--model', type=str, default='assets/maya1.gguf',
-                        help='Path to Maya1 model (GGUF file or HF directory)')
-    parser.add_argument('--model-type', type=str, default='gguf', choices=['gguf', 'huggingface'],
-                        help='Model type: gguf or huggingface')
+    parser.add_argument('--model', type=str, default='assets/models/maya1_full',
+                        help='Path to Maya1 HuggingFace model directory')
     parser.add_argument('--voice', type=str, default='Female voice in her 30s, calm and friendly, natural American accent',
                         help='Voice description (natural language)')
     parser.add_argument('--chunk-size', type=int, default=100,
                         help='Words per chunk (recommended: 80-100) or characters if >500')
-    parser.add_argument('--gap', type=float, default=0.3,
-                        help='Gap between chunks in seconds')
+    parser.add_argument('--gap', type=float, default=0.0,
+                        help='Gap between chunks in seconds (default: 0, rely on chapter silence instead)')
     parser.add_argument('--workers', type=int, default=1,
                         help='Number of worker threads (default: 1 for easier debugging)')
     parser.add_argument('--output', type=str, default='output/test',
@@ -33,10 +31,6 @@ def main():
                         help='Top-p for generation (0.9 recommended)')
     parser.add_argument('--max-tokens', type=int, default=2500,
                         help='Max tokens to generate per chunk (2000-3000 recommended for 80-100 word chunks)')
-    parser.add_argument('--ctx', type=int, default=4096,
-                        help='Context size')
-    parser.add_argument('--gpu-layers', type=int, default=-1,
-                        help='GPU layers (-1 for all)')
 
     args = parser.parse_args()
 
@@ -51,7 +45,7 @@ def main():
     # Check if model exists
     if not os.path.exists(args.model):
         print(f"ERROR: Model not found at {args.model}")
-        print("Please download the Maya1 GGUF model or specify correct path with --model")
+        print("Please download the Maya1 HuggingFace model or specify correct path with --model")
         sys.exit(1)
 
     # Create output directory
@@ -87,10 +81,7 @@ def main():
             temperature=args.temp,
             top_p=args.top_p,
             max_tokens=args.max_tokens,
-            n_ctx=args.ctx,
-            n_gpu_layers=args.gpu_layers,
             workers=args.workers,
-            model_type=args.model_type,
             progress_cb=progress_callback,
         )
 

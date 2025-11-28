@@ -105,29 +105,11 @@ class MainWindow(tk.Tk):
         model_frame.grid(row=1, column=0, padx=5, pady=5, sticky="ew")
         model_frame.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(model_frame, text="Model Type:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        self.model_type = tk.StringVar(value="gguf")
-        model_type_combo = ttk.Combobox(model_frame, textvariable=self.model_type, values=["gguf", "huggingface"], state="readonly", width=15)
-        model_type_combo.grid(row=0, column=1, padx=5, pady=5, sticky="w")
-        model_type_combo.bind("<<ComboboxSelected>>", self._on_model_type_change)
-
-        ttk.Label(model_frame, text="Model Path:").grid(row=1, column=0, padx=5, pady=5, sticky="w")
-        self.model_path = tk.StringVar(value="assets/models/maya1.i1-Q5_K_M.gguf")
+        ttk.Label(model_frame, text="Model Path:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
+        self.model_path = tk.StringVar(value="assets/models/maya1_full")
         model_entry = ttk.Entry(model_frame, textvariable=self.model_path, width=60)
-        model_entry.grid(row=1, column=1, padx=5, pady=5, sticky="ew")
-        ttk.Button(model_frame, text="Browse...", command=self._select_model).grid(row=1, column=2, padx=5, pady=5)
-
-        # GGUF-specific settings (shown/hidden based on model type)
-        self.gguf_settings_frame = ttk.Frame(model_frame)
-        self.gguf_settings_frame.grid(row=2, column=0, columnspan=3, sticky="ew")
-
-        ttk.Label(self.gguf_settings_frame, text="n_ctx:").grid(row=0, column=0, padx=5, pady=5, sticky="w")
-        self.n_ctx = tk.IntVar(value=4096)
-        ttk.Entry(self.gguf_settings_frame, textvariable=self.n_ctx, width=10).grid(row=0, column=1, padx=5, pady=5, sticky="w")
-
-        ttk.Label(self.gguf_settings_frame, text="n_gpu_layers:").grid(row=0, column=2, padx=15, pady=5, sticky="w")
-        self.n_gpu_layers = tk.IntVar(value=-1)
-        ttk.Entry(self.gguf_settings_frame, textvariable=self.n_gpu_layers, width=10).grid(row=0, column=3, padx=5, pady=5, sticky="w")
+        model_entry.grid(row=0, column=1, padx=5, pady=5, sticky="ew")
+        ttk.Button(model_frame, text="Browse...", command=self._select_model).grid(row=0, column=2, padx=5, pady=5)
 
         # --- TTS Synthesis Settings ---
         tts_frame = ttk.LabelFrame(main_frame, text="TTS Synthesis Settings")
@@ -172,7 +154,7 @@ class MainWindow(tk.Tk):
         ttk.Entry(tts_frame, textvariable=self.chunk_size, width=10).grid(row=4, column=1, padx=5, pady=5, sticky="w")
 
         ttk.Label(tts_frame, text="Gap (seconds):").grid(row=5, column=0, padx=5, pady=5, sticky="w")
-        self.gap_size = tk.DoubleVar(value=0.25)
+        self.gap_size = tk.DoubleVar(value=0.0)
         ttk.Entry(tts_frame, textvariable=self.gap_size, width=10).grid(row=5, column=1, padx=5, pady=5, sticky="w")
 
         # --- Output Format ---
@@ -317,25 +299,10 @@ class MainWindow(tk.Tk):
             self.log_message(f"Selected output folder: {path}")
 
     def _select_model(self):
-        model_type = self.model_type.get()
-        if model_type == "gguf":
-            path = filedialog.askopenfilename(filetypes=[("GGUF model files", "*.gguf")])
-        else:
-            path = filedialog.askdirectory(title="Select HuggingFace Model Directory")
+        path = filedialog.askdirectory(title="Select HuggingFace Model Directory")
         if path:
             self.model_path.set(path)
             self.log_message(f"Selected model: {path}")
-
-    def _on_model_type_change(self, event=None):
-        """Handle model type change - show/hide GGUF settings"""
-        model_type = self.model_type.get()
-        if model_type == "gguf":
-            self.gguf_settings_frame.grid()
-            self.model_path.set("assets/models/maya1.i1-Q5_K_M.gguf")
-        else:  # huggingface
-            self.gguf_settings_frame.grid_remove()
-            self.model_path.set("assets/models/maya1_4bit_safetensor")
-        self.log_message(f"Model type changed to: {model_type}")
 
     def _extract_epub(self):
         epub_path = self.epub_path.get()
@@ -410,45 +377,22 @@ class MainWindow(tk.Tk):
         if not os.path.exists(model_path):
             messagebox.showerror("Model Not Found",
                 f"Model file not found:\n{model_path}\n\n"
-                "Please download maya1.i1-Q5_K_M.gguf from:\n"
-                "https://huggingface.co/maya-research/maya1\n\n"
-                "Or run: python create_placeholders.py")
+                "Please download the Maya1 HuggingFace model from:\n"
+                "https://huggingface.co/maya-research/maya1")
             return
 
-        # Check if model file/folder is too small (likely a placeholder)
-        model_type = self.model_type.get()
-        if model_type == "gguf":
-            # For GGUF files, check file size directly
-            model_size = os.path.getsize(model_path)
-            if model_size < 1_000_000:  # Less than 1MB is suspicious
-                response = messagebox.askyesno("Warning: Small Model File",
-                    f"The model file is only {model_size:,} bytes.\n"
-                    "This appears to be a placeholder, not a real model.\n\n"
-                    "Synthesis will likely fail. Continue anyway?")
-                if not response:
-                    return
-        else:  # huggingface
-            # For HuggingFace models, check for model.safetensors or pytorch_model.bin
-            safetensor_path = os.path.join(model_path, "model.safetensors")
-            pytorch_path = os.path.join(model_path, "pytorch_model.bin")
-
-            if os.path.exists(safetensor_path):
-                model_size = os.path.getsize(safetensor_path)
-            elif os.path.exists(pytorch_path):
-                model_size = os.path.getsize(pytorch_path)
-            else:
-                messagebox.showerror("Invalid Model Directory",
-                    f"No model.safetensors or pytorch_model.bin found in:\n{model_path}\n\n"
-                    "Please select a valid HuggingFace model directory.")
+        # For HuggingFace models, check for model.safetensors shards or index
+        safetensor_path = os.path.join(model_path, "model.safetensors")
+        pytorch_path = os.path.join(model_path, "pytorch_model.bin")
+        index_path = os.path.join(model_path, "model.safetensors.index.json")
+        shard1 = os.path.join(model_path, "model-00001-of-00002.safetensors")
+        if not (os.path.exists(safetensor_path) or os.path.exists(pytorch_path) or os.path.exists(index_path) or os.path.exists(shard1)):
+            response = messagebox.askyesno("Warning: Model files missing",
+                f"No model weights were found in:\n{model_path}\n\n"
+                "Expected model.safetensors or shard files.\n"
+                "Synthesis will fail. Continue anyway?")
+            if not response:
                 return
-
-            if model_size < 100_000_000:  # Less than 100MB is suspicious for HF models
-                response = messagebox.askyesno("Warning: Small Model File",
-                    f"The model file is only {model_size:,} bytes.\n"
-                    "This appears to be incomplete or corrupted.\n\n"
-                    "Synthesis will likely fail. Continue anyway?")
-                if not response:
-                    return
 
         cover_path = self.cover_path.get()
 
@@ -514,8 +458,7 @@ class MainWindow(tk.Tk):
                     output_base, cover_path, output_format,
                     self.save_separately.get(), self.merge_chapters.get(),
                     self.chapter_silence.get(), self.temperature.get(),
-                    self.top_p.get(), self.n_ctx.get(),
-                    self.n_gpu_layers.get(), self.model_type.get(),
+                    self.top_p.get(),
                 ),
                 daemon=True
             )
@@ -548,10 +491,16 @@ class MainWindow(tk.Tk):
             self.generation_thread = threading.Thread(
                 target=self._run_pipeline_thread,
                 args=(
-                    epub_text, model_path, self.voice_description.get("1.0", tk.END).strip(),
-                    self.chunk_size.get(), self.gap_size.get(), out_wav, out_mp4,
-                    cover_path, self.temperature.get(), self.top_p.get(),
-                    self.n_ctx.get(), self.n_gpu_layers.get(), self.model_type.get(),
+                    epub_text,
+                    model_path,
+                    self.voice_description.get("1.0", tk.END).strip(),
+                    self.chunk_size.get(),
+                    self.gap_size.get(),
+                    out_wav,
+                    out_mp4,
+                    cover_path,
+                    self.temperature.get(),
+                    self.top_p.get(),
                 ),
                 daemon=True
             )
@@ -560,7 +509,7 @@ class MainWindow(tk.Tk):
     def _run_chapter_pipeline_thread(self, chapters, metadata, model_path, voice_desc,
                                     chunk_size, gap_s, output_base, cover_path, output_format,
                                     save_separately, merge_chapters, chapter_silence,
-                                    temperature, top_p, n_ctx, n_gpu_layers, model_type):
+                                    temperature, top_p):
         """Thread for running chapter-aware pipeline."""
         try:
             result = run_pipeline_with_chapters(
@@ -578,11 +527,8 @@ class MainWindow(tk.Tk):
                 chapter_silence=chapter_silence,
                 temperature=temperature,
                 top_p=top_p,
-                n_ctx=n_ctx,
-                n_gpu_layers=n_gpu_layers,
                 workers=1,
                 max_tokens=2500,
-                model_type=model_type,
                 progress_cb=self._update_progress,
                 stop_flag=self.stop_generation_flag,
             )
@@ -596,10 +542,7 @@ class MainWindow(tk.Tk):
 
     def _run_pipeline_thread(self, *args):
         try:
-            # Last arg is model_type, extract it for keyword arg
-            model_type = args[-1]
-            other_args = args[:-1]
-            run_pipeline(*other_args, model_type=model_type, progress_cb=self._update_progress, stop_flag=self.stop_generation_flag)
+            run_pipeline(*args, progress_cb=self._update_progress, stop_flag=self.stop_generation_flag)
 
             if self.stop_generation_flag and self.stop_generation_flag.is_set():
                 self.after(0, self._generation_cancelled)
@@ -727,14 +670,6 @@ class MainWindow(tk.Tk):
             messagebox.showerror("Error", "Please select a valid model file first.")
             return
 
-        # Check if model is too small (placeholder)
-        model_size = os.path.getsize(model_path)
-        if model_size < 1_000_000:
-            messagebox.showerror("Error",
-                f"Model file appears to be a placeholder ({model_size:,} bytes).\n"
-                "Please download the full model file first.")
-            return
-
         voice_desc = self.voice_description.get("1.0", tk.END).strip()
         if not voice_desc:
             messagebox.showerror("Error", "Voice description is empty.")
@@ -743,8 +678,6 @@ class MainWindow(tk.Tk):
         # Get synthesis parameters
         temperature = self.temperature.get()
         top_p = self.top_p.get()
-        n_ctx = self.n_ctx.get()
-        n_gpu_layers = self.n_gpu_layers.get()
 
         # Check if already cached
         cached_path = get_cached_preview_path(voice_desc, model_path, temperature, top_p)
@@ -764,8 +697,6 @@ class MainWindow(tk.Tk):
                     model_path=model_path,
                     temperature=temperature,
                     top_p=top_p,
-                    n_ctx=n_ctx,
-                    n_gpu_layers=n_gpu_layers,
                 )
                 self.after(0, self._preview_generated_success, preview_path)
             except Exception as e:

@@ -1,14 +1,11 @@
 # core/tts_maya1_hf.py
-"""
-HuggingFace Transformers implementation for Maya1 TTS
-Uses 4-bit quantized safetensor model for better quality and emotion tag support
-"""
+"""HuggingFace Transformers implementation for Maya1 TTS (full precision only)."""
 import tempfile
 import torch
 import soundfile as sf
 import logging
 from dataclasses import dataclass
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from snac import SNAC
 from .maya1_constants import (
@@ -22,34 +19,42 @@ logger = logging.getLogger(__name__)
 _model = None
 _tokenizer = None
 _snac = None
+_model_key: str | None = None
+_tokenizer_path: str | None = None
+
+def _choose_full_dtype() -> torch.dtype:
+    """Select best dtype for full-precision load."""
+    if torch.cuda.is_available():
+        major, _ = torch.cuda.get_device_capability()
+        if major >= 8:
+            return torch.bfloat16  # Ampere+ supports bfloat16
+        return torch.float16
+    return torch.float32
 
 def _ensure_models(model_path: str):
     """Load HuggingFace model, tokenizer, and SNAC codec"""
-    global _model, _tokenizer, _snac
+    global _model, _tokenizer, _snac, _model_key, _tokenizer_path
 
-    if _model is None:
-        logger.info(f"Loading HuggingFace model from {model_path}...")
+    requested_key = model_path
+    if _model is None or _model_key != requested_key:
+        _model_key = requested_key
+        _model = None  # drop previous reference to force reload
+
+        logger.info("Loading HuggingFace model from %s...", model_path)
 
         if torch.cuda.is_available():
-            logger.info("Loading model on CUDA with bitsandbytes 4-bit quantization")
-
-            # Configure 4-bit quantization for GPU
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.float16,  # GTX 2070 (Turing CC 7.5) has native FP16 support, not bfloat16
+            dtype = _choose_full_dtype()
+            logger.info(
+                "Loading full-precision model on CUDA (dtype=%s)",
+                dtype,
             )
-
-            # Load model with 4-bit quantization on GPU
             _model = AutoModelForCausalLM.from_pretrained(
                 model_path,
-                quantization_config=bnb_config,
                 device_map="auto",
+                torch_dtype=dtype,
                 trust_remote_code=True,
             )
-            logger.info("Using bitsandbytes 4-bit GPU kernels")
-            logger.info(f"Model device: {next(_model.parameters()).device}")
+            logger.info("Model device: %s", next(_model.parameters()).device)
         else:
             logger.warning("CUDA not available, loading on CPU (this will be slow)")
             _model = AutoModelForCausalLM.from_pretrained(
@@ -61,11 +66,11 @@ def _ensure_models(model_path: str):
 
         _model.eval()
 
-    if _tokenizer is None:
+    if _tokenizer is None or _tokenizer_path != model_path:
         logger.info("Loading tokenizer...")
         _tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        _tokenizer_path = model_path
 
-        # Set pad token if not set
         if _tokenizer.pad_token is None:
             _tokenizer.pad_token = _tokenizer.eos_token
             logger.info(f"Set pad_token to eos_token: {_tokenizer.eos_token}")

@@ -8,6 +8,7 @@ import os
 import re
 import platform
 from pathlib import Path
+from typing import Optional
 
 
 def sanitize_name_for_os(name: str, is_folder: bool = True) -> str:
@@ -72,6 +73,33 @@ def sanitize_name_for_os(name: str, is_folder: bool = True) -> str:
         sanitized = sanitized[:255].rstrip(". ")
 
     return sanitized
+
+
+def clean_text(
+    text: str,
+    replace_single_newlines: bool = True,
+) -> str:
+    """
+    Normalize EPUB-derived text for TTS:
+    - Normalize line endings to \\n
+    - Collapse repeated spaces/tabs
+    - Collapse 3+ newlines to exactly two
+    - Optionally replace single newlines with spaces for smoother flow
+    """
+    if not text:
+        return ""
+
+    cleaned = text.replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = re.sub(r"[ \t]+", " ", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+
+    if replace_single_newlines:
+        # Protect double newlines, then replace remaining singles
+        cleaned = cleaned.replace("\n\n", "<PARA_BREAK>")
+        cleaned = cleaned.replace("\n", " ")
+        cleaned = cleaned.replace("<PARA_BREAK>", "\n\n")
+
+    return cleaned.strip()
 
 
 def sanitize_chapter_name(chapter_name: str, max_length: int = 80) -> str:

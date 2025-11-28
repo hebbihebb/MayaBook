@@ -9,13 +9,11 @@ import soundfile as sf
 from datetime import datetime
 from typing import List, Tuple, Dict, Optional
 from .chunking import chunk_text
-from .tts_maya1_local import synthesize_chunk_local
 from .tts_maya1_hf import synthesize_chunk_hf
-from .tts_maya1_vllm import synthesize_chunk_vllm
 from .audio_combine import concat_wavs
 from .video_export import export_mp4
 from .m4b_export import create_m4b_stream, write_chapter_metadata_file, add_chapters_to_m4b
-from .utils import sanitize_name_for_os, sanitize_chapter_name, find_unique_path
+from .utils import sanitize_name_for_os, sanitize_chapter_name, find_unique_path, clean_text
 
 # Configure logging
 log_filename = f"mayabook_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -34,46 +32,36 @@ def run_pipeline(
     model_path: str,
     voice_desc: str,
     chunk_size: int,
-    gap_s: float,
+    gap_s: float = 0.0,
     out_wav: str,
     out_mp4: Optional[str] = None,  # Deprecated: MP4 support removed
     cover_image: Optional[str] = None,
     temperature: float = 0.4,
     top_p: float = 0.9,
-    n_ctx: int = 4096,
-    n_gpu_layers: int = -1,
     workers: int = 1,
     max_tokens: int = 2500,
-    model_type: str = "gguf",  # "gguf", "huggingface", or "vllm"
-    tokenizer_path: Optional[str] = None,  # Required for vLLM GGUF models
-    gpu_memory_utilization: float = 0.9,  # vLLM memory usage
-    tensor_parallel_size: int = 1,  # vLLM multi-GPU support
     progress_cb=None,
     stop_flag=None,
 ):
     """
     Runs the full text-to-video pipeline.
 
-    Args:
-        model_type: "gguf" for llama.cpp, "huggingface" for HF transformers, "vllm" for vLLM engine
-        tokenizer_path: Tokenizer path (required for vLLM with GGUF models)
-        gpu_memory_utilization: GPU memory fraction for vLLM (0.0-1.0)
-        tensor_parallel_size: Number of GPUs for vLLM tensor parallelism
+    HF full-precision path only.
     """
     logger.info("="*60)
     logger.info("Starting MayaBook pipeline")
-    logger.info(f"Model type: {model_type}")
     logger.info(f"Model path: {model_path}")
     logger.info(f"Voice description: {voice_desc}")
     logger.info(f"Chunk size: {chunk_size}")
     logger.info(f"Temperature: {temperature}, Top-p: {top_p}")
     logger.info(f"Max tokens: {max_tokens}")
-    if model_type == "gguf":
-        logger.info(f"Context size: {n_ctx}, GPU layers: {n_gpu_layers}")
     logger.info(f"Workers: {workers}")
     logger.info("="*60)
 
     try:
+        # Clean input text to stabilize pacing
+        epub_text = clean_text(epub_text)
+
         # Use word-based chunking for better TTS quality
         # chunk_size parameter is interpreted as max_words when < 500, otherwise max_chars
         if chunk_size < 500:
@@ -111,39 +99,14 @@ def run_pipeline(
                 logger.info(f"Processing chunk {i+1}/{len(chunks)}")
                 logger.debug(f"Chunk {i} text preview: {t[:100]}...")
 
-                # Use appropriate synthesis function based on model type
-                if model_type == "huggingface":
-                    wav_path = synthesize_chunk_hf(
-                        model_path=model_path,
-                        text=t,
-                        voice_description=voice_desc,
-                        temperature=temperature,
-                        top_p=top_p,
-                        max_tokens=max_tokens,
-                    )
-                elif model_type == "vllm":
-                    wav_path = synthesize_chunk_vllm(
-                        model_path=model_path,
-                        text=t,
-                        voice_description=voice_desc,
-                        temperature=temperature,
-                        top_p=top_p,
-                        max_tokens=max_tokens,
-                        tokenizer_path=tokenizer_path,
-                        gpu_memory_utilization=gpu_memory_utilization,
-                        tensor_parallel_size=tensor_parallel_size,
-                    )
-                else:  # gguf
-                    wav_path = synthesize_chunk_local(
-                        model_path=model_path,
-                        text=t,
-                        voice_description=voice_desc,
-                        temperature=temperature,
-                        top_p=top_p,
-                        max_tokens=max_tokens,
-                        n_ctx=n_ctx,
-                        n_gpu_layers=n_gpu_layers,
-                    )
+                wav_path = synthesize_chunk_hf(
+                    model_path=model_path,
+                    text=t,
+                    voice_description=voice_desc,
+                    temperature=temperature,
+                    top_p=top_p,
+                    max_tokens=max_tokens,
+                )
 
                 logger.info(f"Chunk {i+1} synthesized successfully: {wav_path}")
 
@@ -200,7 +163,7 @@ def run_pipeline_with_chapters(
     model_path: str,
     voice_desc: str,
     chunk_size: int,
-    gap_s: float,
+    gap_s: float = 0.0,
     output_base_path: str,
     cover_image: Optional[str] = None,
     output_format: str = "m4b",  # "wav" or "m4b"
@@ -209,14 +172,8 @@ def run_pipeline_with_chapters(
     chapter_silence: float = 2.0,
     temperature: float = 0.45,
     top_p: float = 0.92,
-    n_ctx: int = 4096,
-    n_gpu_layers: int = -1,
     workers: int = 1,
     max_tokens: int = 2500,
-    model_type: str = "gguf",
-    tokenizer_path: Optional[str] = None,
-    gpu_memory_utilization: float = 0.9,
-    tensor_parallel_size: int = 1,
     progress_cb=None,
     stop_flag=None,
 ) -> Dict[str, any]:
@@ -226,10 +183,10 @@ def run_pipeline_with_chapters(
     Args:
         chapters: List of (chapter_title, chapter_text) tuples
         metadata: Dictionary with title, author, year, genre, etc.
-        model_path: Path to TTS model (GGUF or HuggingFace)
+        model_path: Path to HuggingFace TTS model (full-precision safetensors)
         voice_desc: Voice description text
         chunk_size: Max words per chunk (if < 500) or max chars
-        gap_s: Silence gap between chunks (seconds)
+        gap_s: Silence gap between chunks (seconds, default 0)
         output_base_path: Base path for output (without extension)
         cover_image: Path to cover image (optional for M4B)
         output_format: Output format ("wav" or "m4b")
@@ -238,14 +195,8 @@ def run_pipeline_with_chapters(
         chapter_silence: Silence between chapters (seconds)
         temperature: TTS temperature parameter
         top_p: TTS top-p parameter
-        n_ctx: Context size (GGUF only)
-        n_gpu_layers: GPU layers (GGUF only)
         workers: Number of worker threads
         max_tokens: Max tokens per generation
-        model_type: "gguf", "huggingface", or "vllm"
-        tokenizer_path: Tokenizer path (required for vLLM with GGUF)
-        gpu_memory_utilization: GPU memory fraction for vLLM
-        tensor_parallel_size: Number of GPUs for vLLM
         progress_cb: Progress callback function(current, total, chapter_info)
         stop_flag: Threading event to stop processing
 
@@ -259,7 +210,6 @@ def run_pipeline_with_chapters(
     logger.info("="*60)
     logger.info("Starting MayaBook pipeline (Chapter-Aware Mode)")
     logger.info(f"Chapters: {len(chapters)}")
-    logger.info(f"Model type: {model_type}")
     logger.info(f"Output format: {output_format}")
     logger.info(f"Save chapters separately: {save_chapters_separately}")
     logger.info(f"Merge chapters: {merge_chapters}")
@@ -332,12 +282,16 @@ def run_pipeline_with_chapters(
             # Track chapter start time
             chapter_start_time = current_time
 
+            # Clean and annotate chapter text
+            cleaned_text = clean_text(chapter_text)
+            annotated_text = f"<<CHAPTER: {chapter_title}>>\n\n{cleaned_text}"
+
             # Chunk the chapter text
             if chunk_size < 500:
-                chapter_chunks = chunk_text(chapter_text, max_words=chunk_size)
+                chapter_chunks = chunk_text(annotated_text, max_words=chunk_size)
                 logger.info(f"  Chapter chunked into {len(chapter_chunks)} parts ({chunk_size} words max)")
             else:
-                chapter_chunks = chunk_text(chapter_text, max_chars=chunk_size)
+                chapter_chunks = chunk_text(annotated_text, max_chars=chunk_size)
                 logger.info(f"  Chapter chunked into {len(chapter_chunks)} parts ({chunk_size} chars max)")
 
             total_chunks += len(chapter_chunks)
@@ -357,15 +311,9 @@ def run_pipeline_with_chapters(
                 chunks=chapter_chunks,
                 model_path=model_path,
                 voice_desc=voice_desc,
-                model_type=model_type,
                 temperature=temperature,
                 top_p=top_p,
-                n_ctx=n_ctx,
-                n_gpu_layers=n_gpu_layers,
                 max_tokens=max_tokens,
-                tokenizer_path=tokenizer_path,
-                gpu_memory_utilization=gpu_memory_utilization,
-                tensor_parallel_size=tensor_parallel_size,
                 workers=workers,
                 stop_flag=stop_flag,
                 progress_cb=lambda curr, total: progress_cb(
@@ -525,15 +473,9 @@ def _process_chunks_parallel(
     chunks: List[str],
     model_path: str,
     voice_desc: str,
-    model_type: str,
     temperature: float,
     top_p: float,
-    n_ctx: int,
-    n_gpu_layers: int,
     max_tokens: int,
-    tokenizer_path: Optional[str],
-    gpu_memory_utilization: float,
-    tensor_parallel_size: int,
     workers: int,
     stop_flag,
     progress_cb=None,
@@ -565,38 +507,14 @@ def _process_chunks_parallel(
             try:
                 logger.debug(f"Processing chunk {i+1}/{len(chunks)}: {text[:50]}...")
 
-                if model_type == "huggingface":
-                    wav_path = synthesize_chunk_hf(
-                        model_path=model_path,
-                        text=text,
-                        voice_description=voice_desc,
-                        temperature=temperature,
-                        top_p=top_p,
-                        max_tokens=max_tokens,
-                    )
-                elif model_type == "vllm":
-                    wav_path = synthesize_chunk_vllm(
-                        model_path=model_path,
-                        text=text,
-                        voice_description=voice_desc,
-                        temperature=temperature,
-                        top_p=top_p,
-                        max_tokens=max_tokens,
-                        tokenizer_path=tokenizer_path,
-                        gpu_memory_utilization=gpu_memory_utilization,
-                        tensor_parallel_size=tensor_parallel_size,
-                    )
-                else:  # gguf
-                    wav_path = synthesize_chunk_local(
-                        model_path=model_path,
-                        text=text,
-                        voice_description=voice_desc,
-                        temperature=temperature,
-                        top_p=top_p,
-                        max_tokens=max_tokens,
-                        n_ctx=n_ctx,
-                        n_gpu_layers=n_gpu_layers,
-                    )
+                wav_path = synthesize_chunk_hf(
+                    model_path=model_path,
+                    text=text,
+                    voice_description=voice_desc,
+                    temperature=temperature,
+                    top_p=top_p,
+                    max_tokens=max_tokens,
+                )
 
                 with lock:
                     results[i] = wav_path

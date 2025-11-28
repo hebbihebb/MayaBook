@@ -12,6 +12,7 @@ output/
 
 # Ignore safetensor model directories
 assets/models/maya1_4bit_safetensor/
+assets/models/maya1_full/
 
 # Temporary files
 temp_*.txt
@@ -37,4 +38,3 @@ TROUBLESHOOTING*.md
 .claude/
 .vscode/
 .idea/
-
