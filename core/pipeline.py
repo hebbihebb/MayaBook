@@ -32,8 +32,8 @@ def run_pipeline(
     model_path: str,
     voice_desc: str,
     chunk_size: int,
-    gap_s: float = 0.0,
     out_wav: str,
+    gap_s: float = 0.0,
     out_mp4: Optional[str] = None,  # Deprecated: MP4 support removed
     cover_image: Optional[str] = None,
     temperature: float = 0.4,
@@ -163,8 +163,8 @@ def run_pipeline_with_chapters(
     model_path: str,
     voice_desc: str,
     chunk_size: int,
-    gap_s: float = 0.0,
     output_base_path: str,
+    gap_s: float = 0.0,
     cover_image: Optional[str] = None,
     output_format: str = "m4b",  # "wav" or "m4b"
     save_chapters_separately: bool = False,
