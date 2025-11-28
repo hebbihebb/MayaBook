@@ -7,7 +7,9 @@ import tempfile
 import torch
 import soundfile as sf
 import logging
+from dataclasses import dataclass
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
 from snac import SNAC
 from .maya1_constants import (
     SOH_ID, EOH_ID, SOA_ID, TEXT_EOT_ID,
@@ -88,22 +90,87 @@ def _build_prompt(description: str, text: str) -> str:
 
 def _extract_snac_ids(token_ids: list[int]) -> list[int]:
     """Extract SNAC audio tokens from generated token IDs"""
+    return _prepare_snac_frames(token_ids).snac_ids
+
+@dataclass
+class SnacFramePreparation:
+    snac_ids: list[int]
+    code_end_index: int | None
+    residual_before_padding: int
+    padded_tokens: int
+    discarded_tokens: int
+
+def _prepare_snac_frames(gen_ids: list[int]) -> SnacFramePreparation:
+    """
+    Extract SNAC tokens, detect early CODE_END, and pad partial frames.
+    """
     try:
-        end = token_ids.index(CODE_END_TOKEN_ID)
+        start_idx = gen_ids.index(CODE_START_TOKEN_ID) + 1
     except ValueError:
-        end = len(token_ids)
-    return [t for t in token_ids[:end] if SNAC_MIN_ID <= t <= SNAC_MAX_ID]
+        start_idx = 0
+
+    code_end_index = next((i for i, t in enumerate(gen_ids[start_idx:], start=start_idx) if t == CODE_END_TOKEN_ID), None)
+    if code_end_index is not None:
+        logger.info(
+            "CODE_END_TOKEN_ID encountered at generated index %d", code_end_index
+        )
+    else:
+        logger.info("CODE_END_TOKEN_ID not found in generated tokens")
+
+    cutoff = code_end_index if code_end_index is not None else len(gen_ids)
+    snac_candidates = [t for t in gen_ids[start_idx:cutoff] if SNAC_MIN_ID <= t <= SNAC_MAX_ID]
+
+    residual = len(snac_candidates) % SNAC_TOKENS_PER_FRAME
+    padded_tokens = 0
+    discarded_tokens = 0
+
+    if residual:
+        logger.warning(
+            "Partial SNAC frame detected: %d residual token(s) before padding",
+            residual,
+        )
+        if code_end_index is not None:
+            logger.warning(
+                "CODE_END_TOKEN_ID arrived before completing a full SNAC frame; padding final frame"
+            )
+        if snac_candidates:
+            padded_tokens = SNAC_TOKENS_PER_FRAME - residual
+            snac_candidates.extend([snac_candidates[-1]] * padded_tokens)
+            logger.info(
+                "Padded final SNAC frame with %d token(s) using last available token",
+                padded_tokens,
+            )
+        else:
+            discarded_tokens = residual
+
+    return SnacFramePreparation(
+        snac_ids=snac_candidates,
+        code_end_index=code_end_index,
+        residual_before_padding=residual,
+        padded_tokens=padded_tokens,
+        discarded_tokens=discarded_tokens,
+    )
+
+def _apply_fade_and_trim(audio, trim_samples: int | None = 512, fade_samples: int = 320):
+    """
+    Soft-trim initial codec warmup and fade edges to avoid clicks when concatenating chunks.
+    """
+    if trim_samples is not None and len(audio) > trim_samples:
+        audio = audio[trim_samples:]
+
+    fade = min(fade_samples, len(audio) // 4)
+    if fade > 0:
+        ramp = torch.linspace(0.0, 1.0, fade, device="cpu", dtype=torch.float32).numpy()
+        audio[:fade] *= ramp
+        audio[-fade:] *= ramp[::-1]
+    return audio
 
 def _unpack_snac_from_7(snac_ids: list[int]):
     """
     Unpack 7-token SNAC frames into 3-level hierarchical codes.
     Frame structure: [L1, L2a, L3a, L3b, L2b, L3c, L3d]
     """
-    if snac_ids and snac_ids[-1] == CODE_END_TOKEN_ID:
-        snac_ids = snac_ids[:-1]
-
     frames = len(snac_ids) // SNAC_TOKENS_PER_FRAME
-    snac_ids = snac_ids[:frames * SNAC_TOKENS_PER_FRAME]
 
     if frames == 0:
         return [[], [], []]
@@ -128,9 +195,10 @@ def synthesize_chunk_hf(
     model_path: str,
     text: str,
     voice_description: str,
-    temperature: float = 0.4,
-    top_p: float = 0.9,
+    temperature: float = 0.5,  # Increased to 0.5 to help break loops
+    top_p: float = 0.95,       # Increased to 0.95 for more diversity
     max_tokens: int = 2500,
+    trim_samples: int | None = 512,
 ) -> str:
     """
     Synthesize audio using HuggingFace Transformers model
@@ -142,6 +210,7 @@ def synthesize_chunk_hf(
         temperature: Sampling temperature (0.3-0.5 recommended)
         top_p: Top-p sampling (0.9 recommended)
         max_tokens: Maximum tokens to generate (2500 optimal with smart chunking)
+        trim_samples: Number of initial samples to trim from decoded audio (None to disable)
 
     Returns:
         Path to generated WAV file
@@ -171,6 +240,32 @@ def synthesize_chunk_hf(
     logger.info(f"Generation started on GPU device {device}" if device.type == "cuda" else f"Generation started on {device}")
     logger.debug(f"Input shape: {input_ids.shape}, device: {input_ids.device}")
 
+    # Ensure no KV cache is carried across chunks
+    use_cache = True
+    if hasattr(model, "flush_kv_cache"):
+        logger.debug("Flushing model KV cache via flush_kv_cache()")
+        model.flush_kv_cache()
+    elif hasattr(model, "generation_cache"):
+        cache = getattr(model, "generation_cache")
+        if cache is not None:
+            if hasattr(cache, "reset"):
+                logger.debug("Resetting model generation_cache via reset()")
+                cache.reset()
+            elif hasattr(cache, "flush"):
+                logger.debug("Flushing model generation_cache via flush()")
+                cache.flush()
+            elif hasattr(cache, "clear"):
+                logger.debug("Clearing model generation_cache via clear()")
+                cache.clear()
+            else:
+                logger.debug("Generation cache present but no reset/flush/clear method; disabling use_cache for generation")
+                use_cache = False
+    else:
+        logger.debug("No cache flush available; relying on generate() to create fresh cache")
+        # Do NOT disable use_cache - standard HF generate() creates fresh cache anyway
+        # Disabling it causes massive slowdown (recomputing context every token)
+        use_cache = True
+
     # Generate - use CODE_END as EOS (as per official implementation)
     with torch.inference_mode():
         output = model.generate(
@@ -180,9 +275,10 @@ def synthesize_chunk_hf(
             temperature=temperature,
             top_p=top_p,
             do_sample=True,
-            repetition_penalty=1.1,
+            repetition_penalty=1.2,  # Reduced from 1.3 (too high causes gibberish) but > 1.1 (loops)
             pad_token_id=tokenizer.eos_token_id,
             eos_token_id=CODE_END_TOKEN_ID,  # Stop at end of speech token (official way)
+            use_cache=use_cache,
         )
 
     # Extract generated tokens
@@ -191,9 +287,16 @@ def synthesize_chunk_hf(
     logger.debug(f"First 20 generated token IDs: {gen_ids[:20]}")
     logger.debug(f"Last 20 generated token IDs: {gen_ids[-20:]}")
 
-    # Extract SNAC tokens
-    snac_ids = _extract_snac_ids(gen_ids)
-    logger.debug(f"Extracted {len(snac_ids)} SNAC audio tokens")
+    # Extract SNAC tokens with instrumentation and padding
+    snac_prep = _prepare_snac_frames(gen_ids)
+    snac_ids = snac_prep.snac_ids
+    logger.info(
+        "SNAC extraction complete: %d tokens (residual before padding=%d, padded=%d, discarded=%d)",
+        len(snac_ids),
+        snac_prep.residual_before_padding,
+        snac_prep.padded_tokens,
+        snac_prep.discarded_tokens,
+    )
 
     # Unpack SNAC codes
     L1, L2, L3 = _unpack_snac_from_7(snac_ids)
@@ -224,9 +327,8 @@ def synthesize_chunk_hf(
         logger.warning(f"Audio still has {audio.ndim} dimensions, taking first channel")
         audio = audio[0]
 
-    # Trim initial noise
-    if len(audio) > 2048:
-        audio = audio[2048:]
+    # Trim initial noise and apply fades for cleaner chunk joins
+    audio = _apply_fade_and_trim(audio, trim_samples=trim_samples)
 
     logger.debug(f"Final audio shape: {audio.shape}, duration: {len(audio)/24000:.2f}s")
 

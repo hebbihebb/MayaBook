@@ -4,6 +4,7 @@ import logging
 import threading
 import numpy as np
 import zlib
+from dataclasses import dataclass
 
 # Make llama_cpp optional - only needed for GGUF models
 try:
@@ -61,11 +62,62 @@ def _build_prompt_tokens(llm, description: str, text: str) -> list[int]:
     return full_tokens
 
 def _extract_snac_ids(token_ids: list[int]) -> list[int]:
+    prep = _prepare_snac_frames(token_ids)
+    return prep.snac_ids
+
+@dataclass
+class SnacFramePreparation:
+    snac_ids: list[int]
+    code_end_index: int | None
+    residual_before_padding: int
+    padded_tokens: int
+    discarded_tokens: int
+
+def _prepare_snac_frames(gen_ids: list[int]) -> SnacFramePreparation:
+    """
+    Extract SNAC tokens between CODE_START and CODE_END, pad partial frames to keep decoder input aligned.
+    """
     try:
-        end = token_ids.index(CODE_END_TOKEN_ID)
+        start_idx = gen_ids.index(CODE_START_TOKEN_ID) + 1
     except ValueError:
-        end = len(token_ids)
-    return [t for t in token_ids[:end] if SNAC_MIN_ID <= t <= SNAC_MAX_ID]
+        start_idx = 0
+
+    code_end_index = next((i for i, t in enumerate(gen_ids[start_idx:], start=start_idx) if t == CODE_END_TOKEN_ID), None)
+    cutoff = code_end_index if code_end_index is not None else len(gen_ids)
+    snac_candidates = [t for t in gen_ids[start_idx:cutoff] if SNAC_MIN_ID <= t <= SNAC_MAX_ID]
+
+    residual = len(snac_candidates) % SNAC_TOKENS_PER_FRAME
+    padded_tokens = 0
+    discarded_tokens = 0
+
+    if residual:
+        if snac_candidates:
+            padded_tokens = SNAC_TOKENS_PER_FRAME - residual
+            snac_candidates.extend([snac_candidates[-1]] * padded_tokens)
+        else:
+            discarded_tokens = residual
+
+    return SnacFramePreparation(
+        snac_ids=snac_candidates,
+        code_end_index=code_end_index,
+        residual_before_padding=residual,
+        padded_tokens=padded_tokens,
+        discarded_tokens=discarded_tokens,
+    )
+
+def _apply_fade_and_trim(audio: np.ndarray, trim_samples: int = 640, fade_samples: int = 320) -> np.ndarray:
+    """
+    Remove initial codec warm-up and apply a short fade to avoid clicks between stitched chunks.
+    """
+    if trim_samples and len(audio) > trim_samples:
+        audio = audio[trim_samples:]
+
+    fade = min(fade_samples, len(audio) // 4)
+    if fade > 0:
+        ramp = np.linspace(0.0, 1.0, fade, dtype=audio.dtype)
+        audio[:fade] *= ramp
+        audio[-fade:] *= ramp[::-1]
+    return audio
 
 def _unpack_snac_from_7(snac_ids: list[int]):
     """
@@ -157,8 +209,16 @@ def synthesize_chunk_local(
             logger.debug("Using 'text' key (re-tokenized)")
 
         logger.debug(f"Generated {len(gen_ids)} total tokens")
-        snac_ids = _extract_snac_ids(gen_ids)
-        logger.debug(f"Extracted {len(snac_ids)} SNAC audio tokens")
+        snac_prep = _prepare_snac_frames(gen_ids)
+        snac_ids = snac_prep.snac_ids
+        logger.info(
+            "SNAC extraction: %d tokens (residual=%d, padded=%d, discarded=%d, code_end_index=%s)",
+            len(snac_ids),
+            snac_prep.residual_before_padding,
+            snac_prep.padded_tokens,
+            snac_prep.discarded_tokens,
+            snac_prep.code_end_index if snac_prep.code_end_index is not None else "none",
+        )
 
         L1, L2, L3 = _unpack_snac_from_7(snac_ids)
         logger.debug(f"Unpacked SNAC: L1={len(L1)}, L2={len(L2)}, L3={len(L3)} codes")
@@ -182,8 +242,7 @@ def synthesize_chunk_local(
             logger.warning(f"Audio still has {audio.ndim} dimensions after squeeze, taking first channel")
             audio = audio[0]
 
-        if len(audio) > 2048:
-            audio = audio[2048:]
+        audio = _apply_fade_and_trim(audio)
 
         logger.debug(f"Final audio shape: {audio.shape}, duration: {len(audio)/24000:.2f}s")
         return audio
